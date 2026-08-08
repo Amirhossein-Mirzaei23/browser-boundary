@@ -8,7 +8,7 @@
  *   npx tsx examples/tabdeal.ts
  *
  *   # or via the CLI (selectors supplied as flags):
- *   npx mrz-browser-compat https://tabdeal.org \
+ *   npx browser-boundary https://tabdeal.org \
  *     --pages /buy-btc --base-url https://tabdeal.org \
  *     --readiness-selector 'a[href="/buy-cryptocurrency"]' \
  *     --readiness-selector 'a[href="/swap"]' \
