@@ -75,6 +75,17 @@ export interface ScanConfig {
     onStall?: (ctx: { url: string; reason: string }) => 'inconclusive' | 'fail';
   };
 
+  /**
+   * Playwright `page.goto` load state to wait for before evaluating readiness.
+   *  - 'domcontentloaded' (default): fire as soon as the HTML DOM parses; true
+   *    readiness is then proven by the readiness gate. Robust for resource-
+   *    heavy pages that never hit `load`.
+   *  - 'load': wait for the full `load` event (all subresources). More strict;
+   *    use when you want to assert the whole page (images/media/analytics)
+   *    actually finishes loading.
+   */
+  waitUntil?: 'domcontentloaded' | 'load';
+
   timeout?: number;          // default 30000
   headed?: boolean;          // default false
   retries?: number;          // default 3 (transient only)
@@ -96,6 +107,7 @@ export const DEFAULTS = {
   headed: false,
   retries: 3,
   viewport: { width: 1366, height: 768 },
+  waitUntil: 'domcontentloaded' as 'domcontentloaded' | 'load',
   strategy: 'binary' as SearchStrategy,
   stepSize: 10,
   floor: { chromium: 60, firefox: 60, webkit: 13 } as Record<EngineName, number>,

@@ -102,11 +102,14 @@ export async function runCheck(input: CheckInput): Promise<CheckResult> {
     });
 
     // --- Category 1: navigation (with optional beforeGoto hook) ---
+    // waitUntil: 'domcontentloaded' (default) fires as soon as the DOM parses;
+    // 'load' waits for the full page load. True readiness is then proven by the
+    // readiness gate regardless.
     if (config.hooks.beforeGoto) {
       await config.hooks.beforeGoto({ page: p, url: page.url }).catch(() => {});
     }
     try {
-      await p.goto(page.url, { waitUntil: 'domcontentloaded', timeout: config.timeout });
+      await p.goto(page.url, { waitUntil: config.waitUntil, timeout: config.timeout });
     } catch (err) {
       const outcome = describeNavigationError(err);
       navigationError = outcome.error;

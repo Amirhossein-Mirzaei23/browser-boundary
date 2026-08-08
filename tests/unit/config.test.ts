@@ -64,3 +64,13 @@ test('unknown strategy throws', () => {
   // @ts-expect-error invalid strategy
   assert.throws(() => resolveConfig({ urls: ['https://x.com'], search: { strategy: 'bogus' } }), ConfigError);
 });
+
+test('waitUntil defaults to domcontentloaded', () => {
+  const cfg = resolveConfig({ urls: ['https://x.com'] });
+  assert.equal(cfg.waitUntil, 'domcontentloaded');
+});
+
+test('waitUntil: load is honored when set', () => {
+  const cfg = resolveConfig({ urls: ['https://x.com'], waitUntil: 'load' });
+  assert.equal(cfg.waitUntil, 'load');
+});

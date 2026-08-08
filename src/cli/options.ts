@@ -22,6 +22,7 @@ const { values, positionals } = parseArgs({
     format: { type: 'string' },
     output: { type: 'string', short: 'o' },
     timeout: { type: 'string' },
+    'wait-until': { type: 'string' },
     'step-size': { type: 'string' },
     config: { type: 'string' },
     'readiness-selector': { type: 'string', multiple: true },
@@ -84,6 +85,10 @@ export function parseCli(): ParsedCli {
       stepSize: num(values['step-size'] ?? process.env.MRZ_STEP_SIZE ?? process.env.BC_STEP_SIZE),
     },
     timeout: num(values.timeout ?? process.env.MRZ_TIMEOUT_MS ?? process.env.BC_TIMEOUT_MS),
+    waitUntil: (values['wait-until'] ?? process.env.MRZ_WAIT_UNTIL) as
+      | 'domcontentloaded'
+      | 'load'
+      | undefined,
     headed,
     output: {
       format,
@@ -151,6 +156,7 @@ Options:
   --format <list>           json,markdown (default: both)
   -o, --output <dir>        report directory (default: ./reports)
   --timeout <ms>            per-page readiness/navigation timeout (default: 30000)
+  --wait-until <event>      domcontentloaded | load  (default: domcontentloaded)
   --step-size <n>           major-version step before binary search (default: 10)
   --readiness-selector <s>  require this CSS selector (repeatable; default any)
   --readiness-mode <m>      any | all (default: any)
