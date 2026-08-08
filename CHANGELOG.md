@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-08-08
+
+### Added
+- `--wait-until` flag (and `waitUntil` config / `MRZ_WAIT_UNTIL` env) to choose
+  between full page load (`load`) and document-only (`domcontentloaded`,
+  default). Useful for asserting the whole page (images/media/analytics)
+  finishes loading vs. just the parsed DOM.
+- `waitUntil` added to the resolved config and CHANGELOG/config snapshot.
+
+### Changed
+- Per-check progress-log error text is no longer truncated at 90 characters;
+  it now truncates at 600 characters so full diagnostic text (stack signatures,
+  request URLs, net error codes) is visible during a scan.
+
 ## [Unreleased]
 
 ### Added

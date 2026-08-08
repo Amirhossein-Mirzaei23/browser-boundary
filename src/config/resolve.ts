@@ -39,6 +39,7 @@ export interface ResolvedConfig {
   headed: boolean;
   retries: number;
   viewport: { width: number; height: number };
+  waitUntil: 'domcontentloaded' | 'load';
   formats: ('json' | 'markdown')[];
   outputDir: string;
   cacheDir: string;
@@ -114,6 +115,7 @@ export function resolveConfig(input: ScanConfig): ResolvedConfig {
     headed: input.headed ?? DEFAULTS.headed,
     retries: input.retries ?? DEFAULTS.retries,
     viewport: input.viewport ?? DEFAULTS.viewport,
+    waitUntil: input.waitUntil ?? DEFAULTS.waitUntil,
     formats,
     outputDir,
     cacheDir,

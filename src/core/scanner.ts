@@ -189,7 +189,7 @@ export class BrowserCompatibilityScanner {
       config: this.config,
       artifactsDir: artifactDirFor(this.config.outputDir),
     });
-    log(`    → ${r.verdict.toUpperCase()}${r.reason ? ` (${trunc(r.reason, 90)})` : ''}`);
+    log(`    → ${r.verdict.toUpperCase()}${r.reason ? ` (${trunc(r.reason, 600)})` : ''}`);
     return r;
   }
 
