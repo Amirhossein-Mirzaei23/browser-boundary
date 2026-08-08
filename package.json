@@ -1,0 +1,26 @@
+{
+  "name": "browser-compatibility",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Finds the oldest real browser engine version (Chromium/Firefox/WebKit) that correctly loads tabdeal.org pages, using actual historical browser binaries.",
+  "type": "module",
+  "scripts": {
+    "scan": "tsx src/run.ts",
+    "scan:latest": "BC_LATEST_ONLY=1 tsx src/run.ts",
+    "scan:chromium": "BC_ENGINES=chromium tsx src/run.ts",
+    "scan:firefox": "BC_ENGINES=firefox tsx src/run.ts",
+    "scan:webkit": "BC_ENGINES=webkit tsx src/run.ts",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.46.0",
+    "@puppeteer/browsers": "^2.4.0",
+    "playwright": "^1.46.0",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}
