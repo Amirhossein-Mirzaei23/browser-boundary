@@ -1,5 +1,5 @@
 {
-  "name": "mrz-browser-compat",
+  "name": "browser-boundary",
   "version": "1.2.0",
   "description": "Find the oldest real browser version your website can actually run on. Detects compatibility boundaries across Chromium/Firefox/WebKit using real historical browser binaries.",
   "license": "MIT",
@@ -8,7 +8,7 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "mrz-browser-compat": "bin/mrz-browser-compat.js"
+    "browser-boundary": "bin/browser-boundary.js"
   },
   "exports": {
     ".": {
@@ -78,11 +78,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Amirhossein-Mirzaei23/mrz-browser-compat.git"
+    "url": "git+https://github.com/Amirhossein-Mirzaei23/browser-boundary.git"
   },
-  "homepage": "https://github.com/Amirhossein-Mirzaei23/mrz-browser-compat#readme",
+  "homepage": "https://github.com/Amirhossein-Mirzaei23/browser-boundary#readme",
   "bugs": {
-    "url": "https://github.com/Amirhossein-Mirzaei23/mrz-browser-compat/issues"
+    "url": "https://github.com/Amirhossein-Mirzaei23/browser-boundary/issues"
   },
   "allowScripts": {
     "esbuild@0.28.1": true,
