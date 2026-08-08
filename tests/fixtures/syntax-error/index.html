@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Syntax Error Fixture</title></head>
+<body>
+  <main><h1>Syntax Error Fixture</h1></main>
+  <script>
+    // Optional chaining + nullish coalescing. On a browser lacking ES2020 this
+    // is a SyntaxError ("Unexpected token '?.'"), a genuine compat failure.
+    var x = obj?.prop ?? 'fallback';
+    document.querySelector('main').textContent = x;
+  </script>
+</body>
+</html>

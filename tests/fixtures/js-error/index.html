@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>JS Error Fixture</title></head>
+<body>
+  <main><h1>JS Error Fixture</h1></main>
+  <script>
+    // Runtime TypeError (an app bug). The analyzer must NOT attribute this to
+    // a browser feature; confidence must be 'unknown'.
+    window.addEventListener('DOMContentLoaded', function () {
+      var obj = undefined;
+      // eslint-disable-next-line no-unused-expressions
+      obj.missing.property; // throws: Cannot read properties of undefined
+    });
+  </script>
+</body>
+</html>

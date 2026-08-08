@@ -1,5 +1,7 @@
 node_modules/
+dist/
 reports/
+reports-*/
 browser-cache/
 *.log
 .DS_Store

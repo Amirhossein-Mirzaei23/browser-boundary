@@ -1,171 +1,216 @@
-# Tabdeal Browser Compatibility Tester
+# mrz-browser-compat
 
-Finds the **oldest real browser engine version** (Chromium / Firefox / WebKit)
-that can correctly load `https://tabdeal.org` and `https://tabdeal.org/buy-btc`,
-then writes a JSON + Markdown report.
+> Find the oldest browser version your website can actually run on.
 
-It uses **actual historical browser binaries** (Chrome-for-Testing,
-archive.mozilla.org) — it never fakes versions via User-Agent.
+`mrz-browser-compat` is a **browser compatibility boundary detector** for real websites. It answers:
 
----
+> What is the oldest real browser version that can successfully run this website?
 
-## What "compatible" means
+It tests **Chromium**, **Firefox**, and **WebKit** using **real historical browser binaries** (Chrome-for-Testing, archive.mozilla.org) — it never fakes versions by changing the User-Agent.
 
-A version is **PASS** only if *all* of these hold:
+## What it is (and isn't)
 
-1. **Navigation** — `page.goto()` resolves without DNS / TLS / timeout / crash.
-2. **JavaScript** — no uncaught `pageerror`; only critical console errors are fatal (warnings are recorded, not fatal).
-3. **Network** — app-critical JS/CSS/API/font requests succeed. **Analytics/tracking failures are non-fatal.**
-4. **Rendering** — site-specific selectors (discovered from the live site) are actually visible.
-5. **Readiness** — selectors are waited for with a configurable timeout (covers SSR hydration / async API / delayed render).
+- **It is** a tool that finds the verified compatibility *boundary* per browser engine: "oldest verified passing version" and "first verified failing version."
+- **It is not** a Playwright alternative or a general browser-automation framework. It uses Playwright under the hood to drive real browsers.
 
-A version is **FAIL** when any of 1–4 fails. **INCONCLUSIVE** means a real binary
-for that version could not be obtained or launched (recorded, never silently ignored).
+## Why it's different from normal browser testing
 
----
+Normal Playwright tests check that *your current browser* behaves correctly. This tool asks the inverse: given your site as-is, **which historical browser versions can still run it?** That reveals which ES/Web features your build is implicitly requiring, and gives you a data-backed Browserslist target — useful for deciding when it's safe to drop old-browser support.
 
-## Project structure
+## Installation
 
-```text
-browser-compatibility/
-├── package.json
-├── playwright.config.ts        # 3 engine projects for the optional `playwright test` runner
-├── tsconfig.json
-├── src/
-│   ├── types.ts                # Verdict / result / feature records
-│   ├── config.ts               # URLs, timeout, engines, version ranges — env-overridable
-│   ├── error-analyzer.ts       # JS/network signals → ES/Web feature + min engine version
-│   ├── browser-installer.ts    # REAL historical binaries via Chrome-for-Testing / Firefox archive
-│   ├── compatibility-check.ts  # one (engine, version, page) run: the 5 categories
-│   ├── browser-version-tester.ts # step-down + binary-search driver
-│   ├── report-generator.ts     # writes reports/compatibility.{json,md}
-│   └── run.ts                  # CLI entrypoint
-├── tests/
-│   └── compatibility.spec.ts   # thin Playwright-Test wrapper
-├── reports/                    # generated (gitignored)
-│   ├── compatibility.json
-│   ├── compatibility.md
-│   └── artifacts/{screenshots,traces,logs}/
-└── README.md
+```bash
+npm install -D mrz-browser-compat
 ```
 
----
+Playwright is a **peer dependency** — install browsers once:
 
-## 1. Install dependencies
+```bash
+npx mrz-browser-compat install
+# equivalent to: npx playwright install chromium firefox webkit
+```
+
+> Historical Chrome/Firefox binaries are downloaded **on demand at scan time**, never during `npm install`. `@puppeteer/browsers` is an optional dependency used only for historical Chrome.
+
+## CLI usage
+
+```bash
+npx mrz-browser-compat https://example.com
+npx mrz-browser-compat https://example.com --engines chromium,firefox
+npx mrz-browser-compat https://example.com --pages /,/dashboard --base-url https://example.com
+npx mrz-browser-compat https://example.com --strategy binary      # default: step-down + binary search
+npx mrz-browser-compat https://example.com --strategy latest      # probe current build only
+npx mrz-browser-compat https://example.com --latest-only
+npx mrz-browser-compat https://example.com --headed
+npx mrz-browser-compat https://example.com --format json --output ./reports
+npx mrz-browser-compat https://example.com --readiness-selector main --readiness-mode any
+npx mrz-browser-compat https://example.com --min-confidence high
+npx mrz-browser-compat --help
+```
+
+Environment variables (`MRZ_*`, with legacy `BC_*` aliases) are also supported; flags take precedence.
+
+## Library usage
+
+```ts
+import { scan } from 'mrz-browser-compat';
+
+const result = await scan({
+  urls: ['https://example.com', 'https://example.com/about'],
+  engines: ['chromium', 'firefox', 'webkit'],
+  search: { strategy: 'binary', stepSize: 10 },
+  readiness: { selectors: ['main'], mode: 'any' },
+  network: { ignoredPatterns: [/google-analytics/, /googletagmanager/] },
+  output: { format: ['json', 'markdown'], directory: './reports' },
+});
+
+for (const s of result.summaries) {
+  console.log(`${s.engine}: ${s.resultLine} (confidence: ${s.boundaryConfidence})`);
+}
+```
+
+Per-URL readiness (selector or custom function):
+
+```ts
+await scan({
+  urls: [
+    { url: 'https://app.com', readiness: { selectors: ['#app', '[data-hydrated]'], mode: 'all' } },
+    { url: 'https://app.com/dash', readiness: async ({ page }) => {
+      await page.waitForSelector('#dash', { timeout: 15000 });
+      return true;
+    } },
+  ],
+});
+```
+
+## Configuration
+
+```ts
+{
+  urls: (string | PageSpec)[];
+  engines?: EngineName[];            // default: all three
+  search?: { strategy?, stepSize?, floor?, explicitVersions? };
+  checks?: { navigation?, javascript?, console?, network?, rendering?, readiness? }; // all default true
+  readiness?: { selectors: string[]; mode?: 'any' | 'all' };  // top-level default
+  network?: {
+    ignoredPatterns?: (RegExp | string)[];          // non-fatal failures
+    criticalResourceTypes?: ResourceType[];         // fatal failures
+  };
+  analysis?: { minConfidence?: 'high' | 'medium' | 'low' | 'unknown' };
+  hooks?: { beforeGoto?: (...) => Promise<void> };  // opt-in (e.g. anti-bot warm-up)
+  timeout?: number;                  // default 30000
+  headed?: boolean;                  // default false
+  retries?: number;                  // default 3 (transient only)
+  output?: { format?: ('json' | 'markdown')[]; directory?: string };
+  cache?: { directory?: string };    // default ~/.cache/mrz-browser-compat
+}
+```
+
+The core has **no** hardcoded knowledge of any website — selectors, analytics hosts, and anti-bot behavior are all supplied through this config. (See `examples/tabdeal.ts` for a fully-configured real-world example.)
+
+## Browser engines
+
+| Engine | Real historical binaries? | How |
+|---|---|---|
+| Chromium | ✅ | Chrome-for-Testing via `@puppeteer/browsers` |
+| Firefox | ✅ | Release archives from `archive.mozilla.org` |
+| WebKit | ⚠️ current-only | Playwright's patched WebKit build only |
+
+## Version search algorithm
+
+Per engine (Chromium/Firefox), over the descending version list:
+
+1. **Latest first** — probe the current build.
+2. **Step down** by `stepSize` (default 10) majors until a version FAILS.
+3. **Binary search** the gap between the last pass and first fail to pin the exact boundary.
+4. **Skip** everything the boundary implies (no exhaustive scan).
+5. `--strategy latest` short-circuits to step 1; `--strategy explicit` tests only the versions you list.
+
+Honesty contract: results describe **verified** boundaries only. The tool never claims "all versions below X are unsupported" for untested versions. See `boundaryConfidence` (`high` after binary search, `low` for a single probe).
+
+## Compatibility checks
+
+A version **passes** only if all enabled checks succeed:
+
+1. **Navigation** — `page.goto` resolves without DNS/TLS/timeout/crash.
+2. **JavaScript** — no uncaught `pageerror`. (Console errors fail only when mapped to a known feature; warnings never fail.)
+3. **Network** — app-critical JS/CSS/API/font requests succeed. Analytics/tracking failures are non-fatal (configurable).
+4. **Rendering** — the page renders (verified via readiness).
+5. **Readiness** — configurable selectors (`any`/`all`) or a custom predicate become true within the timeout.
+
+A version is **fail** on a real compatibility problem; **inconclusive** if it couldn't be determined (e.g. anti-bot stall); **error** on infrastructure failure (browser wouldn't launch) — these are kept distinct so CI doesn't conflate infra problems with compat problems.
+
+## Error analysis & confidence
+
+Failures are mapped to ES/Web features **with a confidence level**, not false certainty:
+
+- `high` — a SyntaxError uniquely identifying missing syntax (e.g. `Unexpected token '?.'` → Optional chaining).
+- `medium` — a named API missing (e.g. `structuredClone is not defined`).
+- `low` — a method-not-found that *could* be a missing polyfill.
+- `unknown` — a generic runtime error (e.g. `Cannot read properties of undefined`) is **almost always an app bug**, not a compat issue. It is NOT attributed to a feature. (`--min-confidence` controls the FAIL threshold.)
+
+## Reports
+
+- `reports/compatibility.json` — full machine-readable scan.
+- `reports/compatibility.md` — human report: verified boundary, reasons, ES/Web findings table, suggested Browserslist target.
+- `reports/artifacts/` — failure screenshots, Playwright traces, `console-*.log`, `failed-requests-*.log`.
+
+## CI usage
+
+Exit codes distinguish outcomes:
+
+| Code | Meaning |
+|---|---|
+| 0 | scan completed (no verified compat failure) |
+| 1 | compatibility failure (a verified boundary failure was found) |
+| 2 | configuration error |
+| 3 | infrastructure / browser error |
+
+```bash
+npx mrz-browser-compat https://staging.example.com --strategy latest
+```
+
+## Historical browser limitations
+
+- Playwright ships **one build per engine per release**; `playwright install <engine>@N` is unsupported. Historical Chrome/Firefox are fetched from Chrome-for-Testing / archive.mozilla.org and passed to Playwright via `executablePath`.
+- Very old builds may not run on modern Linux (sandbox/ABI/glibc). Set `search.floor` to keep the search above realistic floors (defaults 60/60).
+- User-Agent is **never** changed — that is not equivalent to running an older engine.
+
+## WebKit limitation
+
+Apple does not publish standalone, drivable historical Safari/WebKit binaries, and Playwright does not pin historical WebKit builds. **WebKit results are always the current Playwright WebKit revision** and are reported with `versionType: 'playwright-revision'`. They are **not** equivalent to a specific Safari version. Don't stringify them as "Safari N".
+
+## Browser binary caching
+
+Real historical binaries are cached under `~/.cache/mrz-browser-compat/` (global, shared across projects; overridable via `cache.directory` or `MRZ_BROWSER_CACHE`). A manifest deduplicates downloads so a version isn't re-fetched.
+
+## Security / privacy
+
+- This tool drives a real browser to URLs **you** specify. Only use it against sites you own or are authorized to test.
+- The opt-in `hooks.beforeGoto` is for legitimate anti-bot warm-ups (e.g. obtaining a session cookie your site issues); it uses the browser's real TLS fingerprint and does not spoof identity.
+- Reports may contain request URLs and error text from the target site — review before sharing.
+
+## Development
 
 ```bash
 npm install
+npm run typecheck      # tsc --noEmit
+npm test               # unit tests (offline, fast)
+npm run test:fixtures  # integration tests against local fixtures (needs Playwright)
+npm run build          # tsup → dist/ (ESM + CJS + d.ts)
+npm run pack-check     # verify npm pack contents/size
 ```
 
-## 2. Install Playwright browsers
+The unit test suite is deterministic and **never** touches external websites — it uses local fixtures under `tests/fixtures/`. See `examples/tabdeal.ts` for a real-world (network) example.
 
-```bash
-npx playwright install chromium firefox webkit
-```
+## Contributing
 
-(WebKit historical binaries aren't separately installable — see *Known limitations*.)
+PRs welcome. Please:
 
-## 3. Run the full scan (all engines)
+- Keep **no site-specific knowledge** in `src/core`, `src/detection`, `src/analysis`, or `src/reporting` — site behavior belongs in config/examples.
+- Add/extend unit tests for any logic change (version-search, analyzer, network classification are pure and fully testable).
+- Preserve the honesty contract: verified boundaries only, confidence levels, WebKit Playwright-revision labeling.
 
-```bash
-npm run scan
-```
+## License
 
-## 4. Run only Chromium
-
-```bash
-npm run scan:chromium
-# equivalent to: BC_ENGINES=chromium npm run scan
-```
-
-## 5. Run only Firefox
-
-```bash
-npm run scan:firefox
-```
-
-## 6. Run only WebKit
-
-```bash
-npm run scan:webkit
-```
-
-> For the standard `playwright test` runner (per-engine projects, HTML reports),
-> use `npx playwright test --project=chromium` (or `firefox` / `webkit`).
-
-## 7. Headed mode
-
-Set `HEADED=1` (or `BC_HEADED=1`):
-
-```bash
-HEADED=1 npm run scan
-# or via the test runner:
-npm run test:headed
-```
-
-## 8. Configure the version range
-
-All knobs are env-overridable — no code edits required:
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `BC_ENGINES` | `chromium,firefox,webkit` | Comma-sep engines to scan |
-| `BC_PAGES` | `home,buy-btc` | Comma-sep page labels |
-| `BC_TIMEOUT_MS` | `30000` | Per-page readiness/navigation timeout |
-| `BC_LATEST_ONLY` | `0` | Probe only the current build per engine (smoke run) |
-| `BC_STEP_SIZE` | `10` | Major-version step used before binary-searching |
-| `BC_FLOOR_CHROMIUM` | `60` | Don't search below this Chrome major |
-| `BC_FLOOR_FIREFOX` | `60` | Don't search below this Firefox major |
-| `BC_FLOOR_WEBKIT` | `13` | Safari/WebKit floor |
-| `HEADED` / `BC_HEADED` | `0` | Show browser windows |
-| `BC_REPORTS_DIR` | `./reports` | Output directory |
-| `BC_BROWSER_CACHE` | `./browser-cache` | Where historical binaries are cached |
-
-Edit the static floors/selectors in `src/config.ts` for permanent changes.
-
-## 9. How the version-search algorithm works
-
-Per engine:
-
-1. **Latest first.** Probe the current Playwright-managed build.
-2. **Step down** by `BC_STEP_SIZE` (default 10) major versions. Keep going older while the version PASSES.
-3. **On first FAIL**, stop stepping.
-4. **Binary-search** the range `[firstFail, lastPass]` to pin the exact boundary.
-5. **Skip** everything the boundary already implies (no exhaustive scan).
-6. **INCONCLUSIVE** versions (binary unavailable / wouldn't launch) are recorded and worked around, never abort the scan.
-
-```
-Latest(124) PASS → 114 PASS → 104 PASS → 94 PASS → 84 FAIL
-   → binary search [84 .. 94] → 89 PASS, 88 FAIL
-   → oldest passing = 89, first failing = 88
-   → everything < 88 and > 94 skipped
-```
-
-Use `BC_LATEST_ONLY=1` (or `npm run scan:latest`) to short-circuit to step 1 —
-useful for proving the harness works without the heavy historical downloads.
-
-## 10. Known limitations of testing historical browser versions with Playwright
-
-- **Playwright pins one build per engine per release.** `npx playwright install chromium@100` is **not** supported. This tool fetches real historical **Chrome-for-Testing** builds (via `@puppeteer/browsers`) and real **Firefox** release archives (from `archive.mozilla.org`), passing them to Playwright through `executablePath`.
-- **WebKit cannot be sourced historically.** Only Playwright's patched WebKit build is CDP-drivable; Apple does not publish standalone, drivable historical Safari/WebKit binaries. WebKit results are therefore **current-only** and clearly labelled as such in the report.
-- **Some very old Chrome/Firefox builds won't run on modern Linux** (missing sandbox/ABI/glibc symbols). Use `BC_FLOOR_*` to keep the search above realistic floors (defaults 60/60). Such versions come back **INCONCLUSIVE**, not falsely PASS/FAIL.
-- **User-Agent is never changed.** Changing the UA is not equivalent to running an older engine; this tool does not do it.
-- **Analytics failures are non-fatal.** gtag/GA/etc. failing in old browsers is expected and irrelevant; only app-critical JS/CSS/API/font failures fail a version.
-
----
-
-## Output
-
-- `reports/compatibility.json` — full machine-readable scan (every version, every page, every signal).
-- `reports/compatibility.md` — the report format from the task spec: latest tested / oldest passing / first failing / SUPPORTED ≥ X / failure reasons / ES+Web findings table / final recommendation / suggested Browserslist target.
-- `reports/artifacts/screenshots/` — PNG captured on FAIL.
-- `reports/artifacts/traces/` — Playwright trace ZIP on FAIL (open with `npx playwright show-trace <file>`).
-- `reports/artifacts/logs/` — `console-*.log` and `failed-requests-*.log`.
-
-## Selectors used (discovered from the live site)
-
-The site is a Persian RTL SSR app (Nuxt/Next-style). Selectors are stable
-nav hrefs + visible CTAs — kept resilient to minor markup churn.
-
-- **home** `/`: `a[href="/"]`, `a[href="/buy-cryptocurrency"]`, `a[href="/swap"]`
-- **buy-btc** `/buy-btc`: `a[href="/buy-btc"]`, `a[href="/panel/trade/BTC_IRT"]`, `a[href="/swap?to-symbol=btc"]`
+MIT © Amirhossein Mirzaei

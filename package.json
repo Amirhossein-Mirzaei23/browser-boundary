@@ -1,26 +1,92 @@
 {
-  "name": "browser-compatibility",
+  "name": "mrz-browser-compat",
   "version": "1.0.0",
-  "private": true,
-  "description": "Finds the oldest real browser engine version (Chromium/Firefox/WebKit) that correctly loads tabdeal.org pages, using actual historical browser binaries.",
+  "description": "Find the oldest real browser version your website can actually run on. Detects compatibility boundaries across Chromium/Firefox/WebKit using real historical browser binaries.",
+  "license": "MIT",
   "type": "module",
-  "scripts": {
-    "scan": "tsx src/run.ts",
-    "scan:latest": "BC_LATEST_ONLY=1 tsx src/run.ts",
-    "scan:chromium": "BC_ENGINES=chromium tsx src/run.ts",
-    "scan:firefox": "BC_ENGINES=firefox tsx src/run.ts",
-    "scan:webkit": "BC_ENGINES=webkit tsx src/run.ts",
-    "test": "playwright test",
-    "test:headed": "playwright test --headed",
-    "typecheck": "tsc --noEmit"
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "mrz-browser-compat": "bin/mrz-browser-compat.js"
   },
-  "dependencies": {
-    "@playwright/test": "^1.46.0",
-    "@puppeteer/browsers": "^2.4.0",
-    "playwright": "^1.46.0",
-    "tsx": "^4.19.0"
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "browser",
+    "compatibility",
+    "playwright",
+    "chromium",
+    "firefox",
+    "webkit",
+    "browserslist",
+    "qa",
+    "testing",
+    "es-compat"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "scan": "tsx src/cli/index.ts",
+    "scan:latest": "MRZ_LATEST_ONLY=1 tsx src/cli/index.ts",
+    "scan:chromium": "MRZ_ENGINES=chromium tsx src/cli/index.ts",
+    "scan:firefox": "MRZ_ENGINES=firefox tsx src/cli/index.ts",
+    "scan:webkit": "MRZ_ENGINES=webkit tsx src/cli/index.ts",
+    "test": "node --test --import tsx tests/unit/**/*.test.ts",
+    "test:integration": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:fixtures": "node --test --import tsx tests/integration/**/*.test.ts",
+    "examples:tabdeal": "tsx examples/tabdeal.ts",
+    "examples:basic": "tsx examples/basic.ts",
+    "pack-check": "npm pack --dry-run"
+  },
+  "peerDependencies": {
+    "playwright": ">=1.40.0"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": false
+    }
+  },
+  "optionalDependencies": {
+    "@puppeteer/browsers": ">=2.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.46.0",
+    "@types/node": "^20.0.0",
+    "playwright": "^1.46.0",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.5.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Amirhossein-Mirzaei23/mrz-browser-compat.git"
+  },
+  "homepage": "https://github.com/Amirhossein-Mirzaei23/mrz-browser-compat#readme",
+  "bugs": {
+    "url": "https://github.com/Amirhossein-Mirzaei23/mrz-browser-compat/issues"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "esbuild@0.27.7": true,
+    "tsup@8.5.1": true
   }
 }

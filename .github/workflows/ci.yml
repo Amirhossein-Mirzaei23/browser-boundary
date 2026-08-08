@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm install
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests (offline)
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Verify package contents/size
+        run: npm run pack-check
+      - name: Install Playwright browsers (for fixture integration)
+        run: npx playwright install --with-deps chromium
+      - name: Fixture integration tests
+        run: npm run test:fixtures
+
+  validate-core-no-site-coupling:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install
+      - name: Core must contain no Tabdeal/site-specific coupling
+        run: |
+          set -e
+          # The core layers must be free of any site-specific knowledge.
+          if grep -rniE "tabdeal|buy-btc|buy-cryptocurrency|panel/trade|to-symbol|arvancloud|TS01|معامله|صرافی|خرید|تومان" \
+            src/core src/detection src/analysis src/reporting src/browsers src/config; then
+            echo "ERROR: site-specific coupling found in core layers (see matches above)."
+            exit 1
+          fi
+          echo "OK: core is free of site-specific coupling."

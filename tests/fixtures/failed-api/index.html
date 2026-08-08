@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Failed API Fixture</title></head>
+<body>
+  <main><h1>Failed API Fixture</h1></main>
+  <script>
+    // Critical XHR that fails (500). App-critical network failure must be fatal.
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '/api/broken', true);
+    xhr.send();
+  </script>
+</body>
+</html>
