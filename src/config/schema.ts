@@ -86,6 +86,21 @@ export interface ScanConfig {
    */
   waitUntil?: 'domcontentloaded' | 'load';
 
+  /**
+   * Disable the browser HTTP cache so every navigation fetches resources fresh.
+   * Default TRUE — for a compatibility tester, a cached 200 can mask a real
+   * network failure or a missing-resource error, which would give a false PASS.
+   * Set to false only if you specifically want to test caching behavior.
+   */
+  disableHttpCache?: boolean;
+
+  /**
+   * Seconds to hold the browser window open AFTER checks complete but BEFORE
+   * closing — gives the page extra time to fully load (late JS, async chunks,
+   * hydration) in headed mode. Default 0 (no delay). Useful for visually
+   * inspecting the loaded page before it disappears.
+   */
+  holdOpenSec?: number;
   timeout?: number;          // default 30000
   headed?: boolean;          // default false
   retries?: number;          // default 3 (transient only)
@@ -108,6 +123,8 @@ export const DEFAULTS = {
   retries: 3,
   viewport: { width: 1366, height: 768 },
   waitUntil: 'domcontentloaded' as 'domcontentloaded' | 'load',
+  disableHttpCache: true,
+  holdOpenSec: 0,
   strategy: 'binary' as SearchStrategy,
   stepSize: 10,
   floor: { chromium: 60, firefox: 60, webkit: 13 } as Record<EngineName, number>,

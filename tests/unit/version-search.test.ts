@@ -74,3 +74,41 @@ test('inconclusive versions are recorded, never crash the search', async () => {
   assert.ok(out.inconclusive.includes('115'));
   assert.equal(out.oldestVerifiedPassing, '110');
 });
+
+test('REGRESSION: all-errored range must NOT report the floor as oldest pass', async () => {
+  // This reproduces the real-world bug where every Firefox historical binary
+  // failed to launch (error), and the summary wrongly claimed "PASS >= 60".
+  const out = await searchBoundary({
+    versions: versionRange(120, 60),
+    test: async (): Promise<Verdict> => 'error',
+    strategy: 'step-down',
+    stepSize: 10,
+  });
+  assert.equal(out.oldestVerifiedPassing, null, 'no pass was observed → must be null');
+  assert.equal(out.firstVerifiedFailing, null, 'no fail was observed → must be null');
+  assert.equal(out.boundaryConfidence, 'unknown');
+  assert.ok(out.tested.length > 0, 'versions were still tested');
+});
+
+test('REGRESSION: all-inconclusive range must NOT report the floor as oldest pass', async () => {
+  const out = await searchBoundary({
+    versions: versionRange(120, 60),
+    test: async (): Promise<Verdict> => 'inconclusive',
+    strategy: 'step-down',
+    stepSize: 10,
+  });
+  assert.equal(out.oldestVerifiedPassing, null);
+  assert.equal(out.firstVerifiedFailing, null);
+});
+
+test('all-pass range still correctly reports floor as oldest pass', async () => {
+  // Sanity: when versions genuinely pass, floor IS the oldest pass.
+  const out = await searchBoundary({
+    versions: versionRange(120, 110),
+    test: async (): Promise<Verdict> => 'pass',
+    strategy: 'step-down',
+    stepSize: 5,
+  });
+  assert.equal(out.oldestVerifiedPassing, '110');
+  assert.equal(out.firstVerifiedFailing, null);
+});

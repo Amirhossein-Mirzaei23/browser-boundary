@@ -23,6 +23,8 @@ const { values, positionals } = parseArgs({
     output: { type: 'string', short: 'o' },
     timeout: { type: 'string' },
     'wait-until': { type: 'string' },
+    'http-cache': { type: 'boolean', default: false },
+    'hold-open': { type: 'string' },
     'step-size': { type: 'string' },
     config: { type: 'string' },
     'readiness-selector': { type: 'string', multiple: true },
@@ -89,6 +91,13 @@ export function parseCli(): ParsedCli {
       | 'domcontentloaded'
       | 'load'
       | undefined,
+    // HTTP cache is DISABLED by default (correctness). `--http-cache` opts back in.
+    disableHttpCache: values['http-cache']
+      ? false
+      : envBool('MRZ_HTTP_CACHE')
+        ? false
+        : undefined,
+    holdOpenSec: num(values['hold-open'] ?? process.env.MRZ_HOLD_OPEN),
     headed,
     output: {
       format,
@@ -157,6 +166,8 @@ Options:
   -o, --output <dir>        report directory (default: ./reports)
   --timeout <ms>            per-page readiness/navigation timeout (default: 30000)
   --wait-until <event>      domcontentloaded | load  (default: domcontentloaded)
+  --http-cache              allow the browser HTTP cache (default: disabled for accuracy)
+  --hold-open <sec>         seconds to keep the window open after checks, to fully load (default: 0)
   --step-size <n>           major-version step before binary search (default: 10)
   --readiness-selector <s>  require this CSS selector (repeatable; default any)
   --readiness-mode <m>      any | all (default: any)

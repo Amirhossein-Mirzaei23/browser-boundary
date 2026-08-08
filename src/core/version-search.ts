@@ -112,9 +112,18 @@ export async function searchBoundary(opts: VersionSearchOptions): Promise<Search
       confidence = 'medium';
     }
   } else {
-    // never found a fail within the searched range
-    newestPassIdx = descending.length - 1;
-    confidence = 'low';
+    // never found a fail within the searched range.
+    // Only claim the oldest pass is the floor if we actually observed at least
+    // one pass. If everything errored/inconclusive, we have NO verified pass —
+    // report null honestly (NOT the floor, which was never tested as passing).
+    if (newestPassIdx !== -1) {
+      newestPassIdx = descending.length - 1;
+      confidence = 'low';
+    } else {
+      // No pass and no fail observed — entirely inconclusive.
+      newestPassIdx = -1;
+      confidence = 'unknown';
+    }
   }
 
   const lastPassIdx = newestPassIdx; // index of oldest verified pass (-1 if none)
