@@ -40,6 +40,8 @@ export interface ResolvedConfig {
   retries: number;
   viewport: { width: number; height: number };
   waitUntil: 'domcontentloaded' | 'load';
+  disableHttpCache: boolean;
+  holdOpenSec: number;
   formats: ('json' | 'markdown')[];
   outputDir: string;
   cacheDir: string;
@@ -116,6 +118,8 @@ export function resolveConfig(input: ScanConfig): ResolvedConfig {
     retries: input.retries ?? DEFAULTS.retries,
     viewport: input.viewport ?? DEFAULTS.viewport,
     waitUntil: input.waitUntil ?? DEFAULTS.waitUntil,
+    disableHttpCache: input.disableHttpCache ?? DEFAULTS.disableHttpCache,
+    holdOpenSec: input.holdOpenSec ?? DEFAULTS.holdOpenSec,
     formats,
     outputDir,
     cacheDir,

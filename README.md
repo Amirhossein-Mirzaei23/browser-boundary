@@ -42,9 +42,12 @@ npx mrz-browser-compat https://example.com --strategy binary      # default: ste
 npx mrz-browser-compat https://example.com --strategy latest      # probe current build only
 npx mrz-browser-compat https://example.com --latest-only
 npx mrz-browser-compat https://example.com --headed
+npx mrz-browser-compat https://example.com --headed --hold-open 8          # keep window open 8s after checks
 npx mrz-browser-compat https://example.com --format json --output ./reports
 npx mrz-browser-compat https://example.com --readiness-selector main --readiness-mode any
 npx mrz-browser-compat https://example.com --min-confidence high
+npx mrz-browser-compat https://example.com --wait-until load               # wait for full page load (default: domcontentloaded)
+npx mrz-browser-compat https://example.com --http-cache                   # re-enable browser cache (disabled by default for accuracy)
 npx mrz-browser-compat --help
 ```
 
@@ -98,6 +101,9 @@ await scan({
   };
   analysis?: { minConfidence?: 'high' | 'medium' | 'low' | 'unknown' };
   hooks?: { beforeGoto?: (...) => Promise<void> };  // opt-in (e.g. anti-bot warm-up)
+  waitUntil?: 'domcontentloaded' | 'load';  // default: domcontentloaded (use 'load' for full page)
+  disableHttpCache?: boolean;        // default true (cached 200 can mask real failures)
+  holdOpenSec?: number;              // default 0 (hold window open N sec after checks; great with --headed)
   timeout?: number;                  // default 30000
   headed?: boolean;                  // default false
   retries?: number;                  // default 3 (transient only)
@@ -112,9 +118,11 @@ The core has **no** hardcoded knowledge of any website — selectors, analytics 
 
 | Engine | Real historical binaries? | How |
 |---|---|---|
-| Chromium | ✅ | Chrome-for-Testing via `@puppeteer/browsers` |
-| Firefox | ✅ | Release archives from `archive.mozilla.org` |
+| Chromium | ✅ | Chrome-for-Testing via `@puppeteer/browsers` (CDP is native to every Chrome build) |
+| Firefox | ⚠️ current-only | Playwright's patched Firefox build only (see note below) |
 | WebKit | ⚠️ current-only | Playwright's patched WebKit build only |
+
+> **Why only Chromium gets real historical testing:** Chromium's DevTools Protocol (CDP) is built into every Chrome build, so Chrome-for-Testing binaries are directly drivable by Playwright. Firefox and WebKit require Playwright's own instrumentation patches (Juggler for Firefox) to be driven — vanilla Firefox builds from `archive.mozilla.org` launch then immediately exit, and Apple doesn't publish drivable historical Safari/WebKit. So only the **current** Playwright Firefox/WebKit build is testable. The tool reports this honestly with a `versionType` of `'playwright-revision'` and never claims a specific Firefox/Safari version it can't prove.
 
 ## Version search algorithm
 
@@ -176,9 +184,14 @@ npx mrz-browser-compat https://staging.example.com --strategy latest
 - Very old builds may not run on modern Linux (sandbox/ABI/glibc). Set `search.floor` to keep the search above realistic floors (defaults 60/60).
 - User-Agent is **never** changed — that is not equivalent to running an older engine.
 
-## WebKit limitation
+## Firefox & WebKit limitations (historical testing)
 
-Apple does not publish standalone, drivable historical Safari/WebKit binaries, and Playwright does not pin historical WebKit builds. **WebKit results are always the current Playwright WebKit revision** and are reported with `versionType: 'playwright-revision'`. They are **not** equivalent to a specific Safari version. Don't stringify them as "Safari N".
+Only **Chromium** supports real historical browser testing. Firefox and WebKit both require Playwright's own instrumentation patches to be driven:
+
+- **Firefox** — vanilla release builds from `archive.mozilla.org` lack Playwright's Juggler protocol; they launch then immediately exit. Only the current Playwright Firefox build works.
+- **WebKit** — Apple doesn't publish standalone drivable historical Safari/WebKit binaries, and Playwright doesn't pin historical WebKit builds.
+
+So Firefox/WebKit results are always the **current Playwright build** and are reported with `versionType: 'playwright-revision'`. They are **not** equivalent to a specific Firefox/Safari version. Don't stringify them as "Firefox N" or "Safari N". The tool proactively probes these engines latest-only and notes the limitation in the report.
 
 ## Browser binary caching
 

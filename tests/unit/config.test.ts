@@ -74,3 +74,23 @@ test('waitUntil: load is honored when set', () => {
   const cfg = resolveConfig({ urls: ['https://x.com'], waitUntil: 'load' });
   assert.equal(cfg.waitUntil, 'load');
 });
+
+test('HTTP cache is DISABLED by default (correctness)', () => {
+  const cfg = resolveConfig({ urls: ['https://x.com'] });
+  assert.equal(cfg.disableHttpCache, true);
+});
+
+test('disableHttpCache: false can be opted back in', () => {
+  const cfg = resolveConfig({ urls: ['https://x.com'], disableHttpCache: false });
+  assert.equal(cfg.disableHttpCache, false);
+});
+
+test('holdOpenSec defaults to 0 (no delay)', () => {
+  const cfg = resolveConfig({ urls: ['https://x.com'] });
+  assert.equal(cfg.holdOpenSec, 0);
+});
+
+test('holdOpenSec is honored when set (seconds)', () => {
+  const cfg = resolveConfig({ urls: ['https://x.com'], holdOpenSec: 5 });
+  assert.equal(cfg.holdOpenSec, 5);
+});

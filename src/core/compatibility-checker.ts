@@ -71,6 +71,22 @@ export async function runCheck(input: CheckInput): Promise<CheckResult> {
     await context.tracing.start({ screenshots: true, snapshots: true });
     const p = await context.newPage();
 
+    // Disable the HTTP cache so each navigation fetches resources fresh. For a
+    // compatibility tester a cached 200 can mask a real network/missing-resource
+    // failure and produce a false PASS. We rewrite every request's headers to
+    // force unconditional fetch (no-cache + drop conditional validators).
+    if (config.disableHttpCache) {
+      await p.route('**/*', async (route) => {
+        await route.continue({
+          headers: {
+            ...route.request().headers(),
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            Pragma: 'no-cache',
+          },
+        }).catch(() => route.continue().catch(() => {}));
+      });
+    }
+
     attachJsCollectors(
       p,
       (e) => {
@@ -150,6 +166,14 @@ export async function runCheck(input: CheckInput): Promise<CheckResult> {
     } else {
       await context.tracing.stop().catch(() => {});
     }
+
+    // Hold the window open for a configured number of seconds before closing,
+    // so the page has extra time to fully load (late JS, async chunks, lazy
+    // hydration) — especially useful in headed mode for visual inspection.
+    if (config.holdOpenSec > 0) {
+      await new Promise((r) => setTimeout(r, config.holdOpenSec * 1000));
+    }
+
     await context.close();
   } catch (err) {
     verdict = 'error';

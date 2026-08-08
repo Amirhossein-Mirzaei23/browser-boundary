@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-08-08
+
+### Added
+- `--hold-open <sec>` flag (and `holdOpenSec` config / `MRZ_HOLD_OPEN` env) to
+  keep the browser window open for N seconds after checks complete, giving the
+  page extra time to fully load (late JS, async chunks, hydration) — useful in
+  headed mode. Default 0 (no delay).
+- `--http-cache` flag (and `disableHttpCache` config / `MRZ_HTTP_CACHE` env) to
+  re-enable the browser HTTP cache. The cache is **disabled by default** for
+  accuracy: a cached 200 can mask a real network failure and produce a false
+  PASS. Opt in with `--http-cache` only if you specifically test caching.
+
+### Fixed
+- **Firefox historical testing removed** — vanilla Firefox builds from
+  archive.mozilla.org lack Playwright's Juggler instrumentation and exit
+  immediately on launch. Firefox now correctly reports as current-only (same
+  honest limitation as WebKit). Previously it attempted to drive undrivable
+  binaries, producing misleading ERROR verdicts.
+- **Version-search "all-errored" bug** — when every version in a range errored
+  or was inconclusive, the summary wrongly reported the floor (e.g. "PASS >= 60")
+  as the oldest verified pass. Now correctly reports null (no verified pass)
+  with `boundaryConfidence: 'unknown'`.
+
+### Changed
+- Only Chromium supports real historical browser testing (CDP is native to
+  every Chrome build). Firefox and WebKit are probed latest-only with a clear
+  limitation note in the report.
+
 ## [1.1.0] - 2026-08-08
 
 ### Added

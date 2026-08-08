@@ -103,14 +103,14 @@ export class BrowserCompatibilityScanner {
 
     const latest = await this.provider.getLatest(engine);
     const latestMajor = Number(latest.version);
-    const versionType = engine === 'webkit' ? 'playwright-revision' : 'real-major';
+    const versionType = latest.versionType;
 
-    // WebKit (and latest-only strategy) can only probe the current build.
+    // Engines that can't provide historical binaries (WebKit: no drivable
+    // historical Safari; Firefox: archive builds lack Playwright's Juggler
+    // patch) are probed latest-only. Same for the explicit 'latest' strategy.
     const historicalCapable = this.provider.supportsHistoricalVersions(engine);
-    if (engine === 'webkit' || !historicalCapable || cfg.strategy === 'latest') {
-      if (engine === 'webkit') {
-        log('WebKit: only the current Playwright build is drivable; probing latest only.');
-      }
+    if (!historicalCapable || cfg.strategy === 'latest') {
+      log(`${cap(engine)}: only the current Playwright build is drivable; probing latest only.`);
       const tested: string[] = [];
       for (const page of pages) {
         const r = await this.probe(engine, latest.version, versionType, page, log);
@@ -246,4 +246,8 @@ function artifactDirFor(outputDir: string): string {
 
 function trunc(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+
+function cap(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
