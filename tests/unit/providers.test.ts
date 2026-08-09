@@ -7,23 +7,24 @@ import { DefaultBrowserProvider } from '../../src/browsers/provider.js';
 
 /**
  * Provider capability honesty:
- *  - Chromium: claims historical support (Chrome-for-Testing is CDP-native)
- *  - Firefox: does NOT claim historical support (vanilla builds lack Juggler)
- *  - WebKit: does NOT claim historical support (no drivable historical Safari)
+ *  - Chromium: claims historical support (Chrome-for-Testing, driven by Playwright/CDP)
+ *  - Firefox:  claims historical support (archive.mozilla.org, driven by geckodriver/WebDriver)
+ *  - WebKit:   does NOT claim historical support (no drivable historical Safari off macOS)
  *
- * This encodes the empirical finding from the Tabdeal scan, where Firefox
- * historical binaries launched then immediately exited (no Juggler patch).
+ * Firefox historical binaries are NOT driven by Playwright (vanilla builds lack
+ * the Juggler patch); they are driven by geckodriver via Marionette instead.
  */
-test('Chromium is the ONLY engine that claims historical support', () => {
+test('Chromium and Firefox claim historical support; WebKit does not', () => {
   const p = new DefaultBrowserProvider();
   assert.equal(p.supportsHistoricalVersions('chromium'), true);
-  assert.equal(p.supportsHistoricalVersions('firefox'), false, 'Firefox cannot do historical via Playwright');
-  assert.equal(p.supportsHistoricalVersions('webkit'), false, 'WebKit cannot do historical via Playwright');
+  assert.equal(p.supportsHistoricalVersions('firefox'), true, 'Firefox supports historical via geckodriver');
+  assert.equal(p.supportsHistoricalVersions('webkit'), false, 'WebKit cannot do historical off macOS');
 });
 
-test('FirefoxProvider does not claim historical support', () => {
+test('FirefoxProvider claims historical support for firefox only', () => {
   const f = new FirefoxProvider();
-  assert.equal(f.supportsHistoricalVersions('firefox'), false);
+  assert.equal(f.supportsHistoricalVersions('firefox'), true);
+  assert.equal(f.supportsHistoricalVersions('chromium'), false);
 });
 
 test('ChromiumProvider claims historical support', () => {

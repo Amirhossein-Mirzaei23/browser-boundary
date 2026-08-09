@@ -26,11 +26,14 @@ export class WebKitProvider {
       buildLabel: latest.buildLabel,
       versionType: 'playwright-revision',
       isPlaywrightBuild: true,
+      controller: 'playwright',
       limitationNote:
         'Historical WebKit binaries are not installable/drivable via Playwright. ' +
         'Only the current Playwright WebKit build is available; WebKit versions are ' +
         'proxied by Playwright build revisions. Treat WebKit results as "current-only" ' +
-        'and do not equate the revision to a specific Safari version.',
+        'and do not equate the revision to a specific Safari version. (Historical ' +
+        'Safari is only testable on macOS hardware with matching macOS images, or via ' +
+        'a cloud-device service — not supported by this provider.)',
     };
   }
 

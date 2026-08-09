@@ -24,8 +24,16 @@ export { DEFAULTS, ConfigError, resolveConfig, toRegExp } from './config/index.j
 export type { ResolvedConfig, ResolvedPage } from './config/resolve.js';
 
 // Browser providers
-export type { BrowserBinary, BrowserProvider, BrowserVersion } from './browsers/types.js';
+export type { BrowserBinary, BrowserProvider, BrowserVersion, ControllerKind } from './browsers/types.js';
+export { HistoricalUnavailableError } from './browsers/types.js';
 export { DefaultBrowserProvider, defaultBrowserProvider } from './browsers/provider.js';
+// geckodriver ↔ Firefox compatibility matrix (for advanced consumers / custom providers)
+export {
+  resolveGeckodriver,
+  GECKODRIVER_MATRIX,
+  GECKODRIVER_ABSOLUTE_FLOOR,
+  type GeckodriverCompat,
+} from './browsers/geckodriver-matrix.js';
 
 // Results & reporting
 export type {

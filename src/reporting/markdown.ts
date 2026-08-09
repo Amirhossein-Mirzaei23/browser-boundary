@@ -72,8 +72,9 @@ export function renderMarkdown(result: ScanResult): string {
   // Limitations
   push('## Known Limitations');
   push();
-  push('- Playwright ships one build per engine per release; `playwright install <engine>@N` is unsupported. Historical Chrome/Firefox are fetched via Chrome-for-Testing / archive.mozilla.org.');
-  push('- **WebKit cannot be sourced historically.** Only the current Playwright WebKit build is reported; it is NOT equivalent to a specific Safari version.');
+  push('- Historical Chrome is fetched via Chrome-for-Testing and driven by Playwright/CDP; historical Firefox is fetched from archive.mozilla.org and driven by geckodriver (W3C WebDriver). Current Firefox/WebKit use Playwright patched builds.');
+  push('- **WebKit cannot be sourced historically off macOS.** Only the current Playwright WebKit build is reported; it is NOT equivalent to a specific Safari version. Historical Safari needs macOS hardware or a cloud-device service.');
+  push('- Firefox versions below geckodriver\'s floor (52) are reported **inconclusive**, never substituted — a version that cannot be tested is not attributed a verdict from another version.');
   push('- Results marked **inconclusive** could not be evaluated (binary unavailable, browser would not launch, or an anti-bot/WAF stall). They do not affect the verified boundary.');
   push('- The boundary is what was **verified**: do not infer that every version below `firstVerifiedFailing` fails, or every version above `oldestVerifiedPassing` passes, without testing.');
 

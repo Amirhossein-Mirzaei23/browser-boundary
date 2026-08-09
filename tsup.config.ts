@@ -8,6 +8,8 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   treeshake: true,
-  // Don't bundle Playwright/@puppeteer/browsers (peers/optionals); keep them external.
-  external: ['playwright', '@playwright/test', '@puppeteer/browsers'],
+  // Don't bundle peers/optionals; keep them external so they're resolved at
+  // runtime. selenium-webdriver is dynamically imported only for historical
+  // Firefox probes and must NOT be required at bundle time.
+  external: ['playwright', '@playwright/test', '@puppeteer/browsers', 'selenium-webdriver', 'selenium-webdriver/firefox'],
 });

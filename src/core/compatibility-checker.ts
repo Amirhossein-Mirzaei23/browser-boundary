@@ -1,9 +1,8 @@
 import path from 'node:path';
 import { existsSync, mkdirSync, appendFileSync } from 'node:fs';
-import type { Browser, BrowserType } from 'playwright';
-import { playwrightBrowserType } from '../browsers/playwright-provider.js';
 import type {
   CheckResult,
+  ConsoleLevel,
   EngineName,
   FailedRequest,
   JsError,
@@ -13,21 +12,20 @@ import type {
 import type { ResolvedConfig, ResolvedPage } from '../config/resolve.js';
 import type { BrowserBinary } from '../browsers/types.js';
 import { analyzeSignals } from '../analysis/error-analyzer.js';
-import {
-  attachJsCollectors,
-  attachRequestTracker,
-  checkReadiness,
-  classifyFailedRequest,
-  describeNavigationError,
-  detectSilentStall,
-} from '../detection/index.js';
+import { classifyFailedRequest } from '../detection/index.js';
 import { withRetry, isTransientReason } from './retry.js';
+import { controllerFor } from '../controllers/index.js';
 
 /**
  * Runs ONE (engine, version, page) check using a REAL browser binary and
  * evaluates all enabled categories (navigation, JS, console, network,
  * rendering, readiness). No site-specific behavior lives here — anti-bot
  * warm-ups etc. are supplied via the config `hooks.beforeGoto`.
+ *
+ * Browser driving is delegated to an AutomationController (Playwright or
+ * WebDriver), selected from `binary.controller`. This file is protocol-agnostic:
+ * it owns signal classification (config-bound) and verdict analysis, both
+ * shared across controllers.
  */
 export interface CheckInput {
   engine: EngineName;
@@ -44,7 +42,7 @@ export async function runCheck(input: CheckInput): Promise<CheckResult> {
   const { engine, version, versionType, binary, page, config, artifactsDir } = input;
 
   const jsErrors: JsError[] = [];
-  const consoleMsgs: { level: 'error' | 'warning' | 'info' | 'log'; text: string }[] = [];
+  const consoleMsgs: { level: ConsoleLevel; text: string }[] = [];
   const failedRequests: FailedRequest[] = [];
   let navigationError: string | null = null;
   let rendered = false;
@@ -57,85 +55,66 @@ export async function runCheck(input: CheckInput): Promise<CheckResult> {
   const consoleLog = path.join(dirs.logs, `console-${stem}.log`);
   const reqLog = path.join(dirs.logs, `failed-requests-${stem}.log`);
 
-  const browserType: BrowserType = playwrightBrowserType(engine);
-  let browser: Browser | null = null;
   let verdict: Verdict = 'inconclusive';
   let reason = '';
   let screenshotPath: string | null = null;
   let tracePath: string | null = null;
   let finding: CheckResult['finding'] = null;
 
-  try {
-    browser = await launchReal(engine, browserType, binary, config);
-    const context = await browser.newContext({ viewport: config.viewport });
-    await context.tracing.start({ screenshots: true, snapshots: true });
-    const p = await context.newPage();
+  const controller = await controllerFor(binary);
+  let session: Awaited<ReturnType<typeof controller.launch>> | null = null;
 
-    // Disable the HTTP cache so each navigation fetches resources fresh. For a
-    // compatibility tester a cached 200 can mask a real network/missing-resource
-    // failure and produce a false PASS. We rewrite every request's headers to
-    // force unconditional fetch (no-cache + drop conditional validators).
+  try {
+    session = await controller.launch(binary, config);
+    await session.startTrace();
+
     if (config.disableHttpCache) {
-      await p.route('**/*', async (route) => {
-        await route.continue({
-          headers: {
-            ...route.request().headers(),
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            Pragma: 'no-cache',
-          },
-        }).catch(() => route.continue().catch(() => {}));
-      });
+      await session.disableCache();
     }
 
-    attachJsCollectors(
-      p,
-      (e) => {
+    // Signal collectors. The controller emits RAW events; the checker classifies
+    // request fatality using the resolved config (controllers are config-free).
+    await session.attachCollectors({
+      onJsError: (e) => {
         jsErrors.push(e);
         appendLog(consoleLog, `[pageerror] ${e.message}\n${e.stack ?? ''}\n`);
       },
-      (level, text) => {
+      onConsole: (level, text) => {
         consoleMsgs.push({ level, text });
         if (level === 'error' || level === 'warning') appendLog(consoleLog, `[${level}] ${text}\n`);
       },
-    );
-
-    const { inflight, responseCount } = attachRequestTracker(p, (status, method, url, dur) => {
-      appendLog(reqLog, `[resp] ${status} ${method} ${url.slice(0, 80)} (${dur}ms)\n`);
-    });
-    p.on('requestfailed', (req) => {
-      const fr = classifyFailedRequest(
-        req.url(),
-        req.method(),
-        req.resourceType(),
-        req.failure()?.errorText ?? null,
-        config.ignoredPatterns,
-        config.criticalResourceTypes,
-      );
-      failedRequests.push(fr);
-      if (fr.fatal || fr.category === 'analytics') {
-        appendLog(reqLog, `[${fr.category}${fr.fatal ? '*' : ''}] ${req.method()} ${req.url()} — ${fr.failureText}\n`);
-      }
+      onRequestFailure: (url, method, resourceType, failureText) => {
+        const fr = classifyFailedRequest(
+          url,
+          method,
+          resourceType,
+          failureText,
+          config.ignoredPatterns,
+          config.criticalResourceTypes,
+        );
+        failedRequests.push(fr);
+        if (fr.fatal || fr.category === 'analytics') {
+          appendLog(reqLog, `[${fr.category}${fr.fatal ? '*' : ''}] ${method} ${url} — ${fr.failureText}\n`);
+        }
+      },
     });
 
     // --- Category 1: navigation (with optional beforeGoto hook) ---
-    // waitUntil: 'domcontentloaded' (default) fires as soon as the DOM parses;
-    // 'load' waits for the full page load. True readiness is then proven by the
-    // readiness gate regardless.
-    if (config.hooks.beforeGoto) {
-      await config.hooks.beforeGoto({ page: p, url: page.url }).catch(() => {});
-    }
     try {
-      await p.goto(page.url, { waitUntil: config.waitUntil, timeout: config.timeout });
+      const result = await session.goto(page.url, {
+        waitUntil: config.waitUntil,
+        timeout: config.timeout,
+      });
+      navigationError = result.error;
     } catch (err) {
-      const outcome = describeNavigationError(err);
-      navigationError = outcome.error;
-      const stall = detectSilentStall(page.url, [...inflight.values()], responseCount(), config.timeout);
-      if (stall) navigationError = stall;
+      // Controllers report nav failures via GotoResult.error, not throws; this
+      // guards against a controller that unexpectedly throws.
+      navigationError = `Navigation error: ${err instanceof Error ? err.message : String(err)}`;
     }
 
     // --- Categories 4 & 5: rendering + readiness ---
     if (!navigationError && config.checks.readiness) {
-      const outcome = await checkReadiness(p, page, config.timeout);
+      const outcome = await session.checkReadiness(page, config.timeout);
       rendered = outcome.rendered;
       renderedSelectors = outcome.renderedSelectors;
       readyMs = outcome.readyMs;
@@ -160,26 +139,29 @@ export async function runCheck(input: CheckInput): Promise<CheckResult> {
 
     if (verdict === 'fail') {
       screenshotPath = path.join(dirs.screenshots, `${stem}.png`);
-      await p.screenshot({ path: screenshotPath, fullPage: false }).catch(() => {});
-      tracePath = path.join(dirs.traces, `${stem}.zip`);
-      await context.tracing.stop({ path: tracePath }).catch(() => {});
-    } else {
-      await context.tracing.stop().catch(() => {});
+      await session.screenshot(screenshotPath);
+      if (session.supportsTracing) {
+        tracePath = path.join(dirs.traces, `${stem}.zip`);
+        await session.saveTrace(tracePath);
+      }
+    } else if (session.supportsTracing) {
+      await session.discardTrace();
     }
 
-    // Hold the window open for a configured number of seconds before closing,
-    // so the page has extra time to fully load (late JS, async chunks, lazy
-    // hydration) — especially useful in headed mode for visual inspection.
-    if (config.holdOpenSec > 0) {
-      await new Promise((r) => setTimeout(r, config.holdOpenSec * 1000));
-    }
-
-    await context.close();
+    await session.holdOpenAndClose(config.holdOpenSec);
+    session = null;
   } catch (err) {
     verdict = 'error';
     reason = `Infrastructure error: ${err instanceof Error ? err.message : String(err)}`;
   } finally {
-    if (browser) await browser.close().catch(() => {});
+    // Guarantee teardown if holdOpenAndClose was bypassed by a throw.
+    if (session) {
+      try {
+        await session.holdOpenAndClose(0);
+      } catch {
+        /* best effort */
+      }
+    }
   }
 
   return {
@@ -214,27 +196,6 @@ export async function runCheckWithRetry(input: CheckInput): Promise<CheckResult>
     input.config.retries,
     (r) => (r.verdict === 'inconclusive' || r.verdict === 'error') && isTransientReason(r.reason),
   );
-}
-
-async function launchReal(
-  engine: EngineName,
-  browserType: BrowserType,
-  binary: BrowserBinary,
-  config: ResolvedConfig,
-): Promise<Browser> {
-  const opts: Parameters<BrowserType['launch']>[0] = {
-    headless: !config.headed,
-    timeout: config.timeout,
-  };
-  // Use the resolved binary path for historical Chromium/Firefox. WebKit always
-  // uses the Playwright-patched build (its limitationNote explains this).
-  if (engine !== 'webkit' && !binary.isPlaywrightBuild) {
-    opts.executablePath = binary.executablePath;
-  }
-  if (engine === 'chromium') {
-    opts.args = ['--no-sandbox', '--disable-dev-shm-usage'];
-  }
-  return browserType.launch(opts);
 }
 
 function ensureArtifactDirs(artifactsDir: string): {

@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { EngineName } from '../reporting/types.js';
 import type { BrowserBinary, BrowserVersion } from './types.js';
+import { HistoricalUnavailableError } from './types.js';
 import { PlaywrightProvider } from './playwright-provider.js';
 import { ensureDir, readManifest, writeManifest } from './util.js';
 
@@ -13,6 +14,13 @@ import { ensureDir, readManifest, writeManifest } from './util.js';
  * to Playwright via executablePath. @puppeteer/browsers is an OPTIONAL
  * dependency and is dynamically imported so consumers who only need
  * Playwright-managed builds never require it.
+ *
+ * Honesty contract: if a real Chrome-for-Testing binary for the requested
+ * version cannot be obtained, `install()` throws `HistoricalUnavailableError`.
+ * The scanner turns that into an INCONCLUSIVE result for that version — it
+ * NEVER substitutes the current Chrome build under the requested version's name,
+ * because a verdict from a different version would attribute e.g. a Chrome 151
+ * test to Chrome 80.
  */
 const INSTALLED_FLAG = 'mrz-installed.json';
 
@@ -36,6 +44,7 @@ export class ChromiumProvider {
         buildLabel: latest.buildLabel,
         versionType: 'real-major',
         isPlaywrightBuild: true,
+        controller: 'playwright',
         limitationNote: null,
       };
     }
@@ -47,19 +56,15 @@ export class ChromiumProvider {
         buildLabel: historical.buildLabel,
         versionType: 'real-major',
         isPlaywrightBuild: false,
+        controller: 'playwright',
         limitationNote: null,
       };
     } catch (err) {
-      return {
-        executablePath: latest.executablePath,
-        buildLabel: latest.buildLabel,
-        versionType: 'real-major',
-        isPlaywrightBuild: true,
-        limitationNote:
-          `Could not obtain real Chromium v${requestedMajor} binary: ` +
-          `${err instanceof Error ? err.message : String(err)}. ` +
-          `Falling back to current Playwright build; this version should be marked inconclusive.`,
-      };
+      throw new HistoricalUnavailableError(
+        `Could not obtain real Chromium v${requestedMajor} binary: ` +
+          `${err instanceof Error ? err.message : String(err)}. This version was not tested.`,
+        'download-failed',
+      );
     }
   }
 
@@ -79,6 +84,19 @@ export class ChromiumProvider {
     if (!platform) throw new Error('Unsupported platform for Chrome-for-Testing download');
 
     const buildId = await resolveBuildId(Browser.CHROME, platform, `${major}`);
+    // resolveBuildId returns the bare input major (e.g. "111") unchanged when it
+    // cannot find a matching Chrome-for-Testing build — instead of throwing. A
+    // real CFT build id is always a full MAJOR.MINOR.BUILD.PATCH (≥3 dots). If we
+    // got a bare number back, no CFT build exists for this major: fail honestly
+    // up front rather than downloading a 404'ing URL.
+    // (Chrome-for-Testing publishes Linux builds from major 113 onward.)
+    if (!/^\d+\.\d+\.\d+\.\d+$/.test(buildId)) {
+      throw new HistoricalUnavailableError(
+        `Chrome-for-Testing has no build for Chrome ${major}. ` +
+          `CFT publishes builds from major 113 onward; this version was not tested.`,
+        'download-failed',
+      );
+    }
     const cache = path.join(cacheDir, 'cft');
     ensureDir(cache);
     const exe = computeExecutablePath({ browser: Browser.CHROME, buildId, platform, cacheDir: cache });

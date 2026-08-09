@@ -74,14 +74,27 @@ export async function searchBoundary(opts: VersionSearchOptions): Promise<Search
   if (verdicts.get(descending[0]) !== 'pass') {
     newestPassIdx = -1; // latest itself didn't pass; no pass anchor yet
   }
+  // Stop stepping once we hit a run of consecutive inconclusive/error verdicts
+  // — if older versions keep coming back untestable (e.g. historical binaries
+  // unavailable), there is no value probing every remaining step. A fail (or a
+  // pass that resets the streak) continues; MAX_UNAVAILABLE in a row aborts.
+  const MAX_UNAVAILABLE_STREAK = 2;
+  let unavailableStreak = 0;
   for (let i = step; i < descending.length; i += step) {
     const r = await run(descending[i]);
     if (r === 'fail') {
       newestFailIdx = i;
       break;
     }
-    if (r === 'pass') newestPassIdx = i;
-    // inconclusive/error: keep stepping without claiming a pass
+    if (r === 'pass') {
+      newestPassIdx = i;
+      unavailableStreak = 0;
+    } else {
+      // inconclusive/error: keep stepping without claiming a pass, but bail if
+      // it's clear the older range is untestable.
+      unavailableStreak++;
+      if (unavailableStreak >= MAX_UNAVAILABLE_STREAK) break;
+    }
   }
 
   let confidence: Confidence = 'medium';
@@ -113,11 +126,12 @@ export async function searchBoundary(opts: VersionSearchOptions): Promise<Search
     }
   } else {
     // never found a fail within the searched range.
-    // Only claim the oldest pass is the floor if we actually observed at least
-    // one pass. If everything errored/inconclusive, we have NO verified pass —
-    // report null honestly (NOT the floor, which was never tested as passing).
+    // Report the OLDEST VERSION ACTUALLY OBSERVED PASSING (the last pass index
+    // from the step phase). Do NOT claim the floor passed — it may never have
+    // been tested, or the step phase may have broken early on a run of
+    // inconclusive/unavailable versions. If nothing passed, report null honestly.
     if (newestPassIdx !== -1) {
-      newestPassIdx = descending.length - 1;
+      // newestPassIdx already holds the oldest verified pass index — keep it.
       confidence = 'low';
     } else {
       // No pass and no fail observed — entirely inconclusive.
