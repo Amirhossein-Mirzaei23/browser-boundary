@@ -91,5 +91,8 @@
     "esbuild@0.28.1": true,
     "esbuild@0.27.7": true,
     "tsup@8.5.1": true
+  },
+  "dependencies": {
+    "mrz-browser-compat": "^1.2.0"
   }
 }

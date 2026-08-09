@@ -85,12 +85,22 @@ test('disableHttpCache: false can be opted back in', () => {
   assert.equal(cfg.disableHttpCache, false);
 });
 
-test('holdOpenSec defaults to 0 (no delay)', () => {
+test('holdOpenSec defaults to 2 seconds', () => {
   const cfg = resolveConfig({ urls: ['https://x.com'] });
-  assert.equal(cfg.holdOpenSec, 0);
+  assert.equal(cfg.holdOpenSec, 2);
 });
 
 test('holdOpenSec is honored when set (seconds)', () => {
   const cfg = resolveConfig({ urls: ['https://x.com'], holdOpenSec: 5 });
   assert.equal(cfg.holdOpenSec, 5);
+});
+
+test('headed defaults to true (windows shown)', () => {
+  const cfg = resolveConfig({ urls: ['https://x.com'] });
+  assert.equal(cfg.headed, true);
+});
+
+test('headed can be turned off (headless)', () => {
+  const cfg = resolveConfig({ urls: ['https://x.com'], headed: false });
+  assert.equal(cfg.headed, false);
 });

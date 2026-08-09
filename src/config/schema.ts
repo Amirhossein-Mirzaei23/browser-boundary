@@ -97,12 +97,12 @@ export interface ScanConfig {
   /**
    * Seconds to hold the browser window open AFTER checks complete but BEFORE
    * closing — gives the page extra time to fully load (late JS, async chunks,
-   * hydration) in headed mode. Default 0 (no delay). Useful for visually
-   * inspecting the loaded page before it disappears.
+   * hydration) in headed mode. Default 2. Useful for visually inspecting the
+   * loaded page before it disappears.
    */
   holdOpenSec?: number;
   timeout?: number;          // default 30000
-  headed?: boolean;          // default false
+  headed?: boolean;          // default true
   retries?: number;          // default 3 (transient only)
   viewport?: { width: number; height: number };
 
@@ -119,12 +119,12 @@ export interface ScanConfig {
 export const DEFAULTS = {
   engines: ['chromium', 'firefox', 'webkit'] as EngineName[],
   timeout: 30_000,
-  headed: false,
+  headed: true,
   retries: 3,
   viewport: { width: 1366, height: 768 },
   waitUntil: 'domcontentloaded' as 'domcontentloaded' | 'load',
   disableHttpCache: true,
-  holdOpenSec: 0,
+  holdOpenSec: 2,
   strategy: 'binary' as SearchStrategy,
   stepSize: 10,
   floor: { chromium: 60, firefox: 60, webkit: 13 } as Record<EngineName, number>,
