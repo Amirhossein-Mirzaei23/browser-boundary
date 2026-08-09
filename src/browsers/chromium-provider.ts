@@ -5,22 +5,30 @@ import type { BrowserBinary, BrowserVersion } from './types.js';
 import { HistoricalUnavailableError } from './types.js';
 import { PlaywrightProvider } from './playwright-provider.js';
 import { ensureDir, readManifest, writeManifest } from './util.js';
+import { snapshotRevisionFor, SNAPSHOT_MILESTONE_MAX } from './chromium-snapshots.js';
 
 /**
- * Chromium historical provider.
+ * Chromium historical provider — REAL binaries for Chrome 60 through current.
  *
- * Downloads REAL historical Chrome builds from Chrome-for-Testing (the same
- * source Playwright/Puppeteer use) via @puppeteer/browsers, then hands the path
- * to Playwright via executablePath. @puppeteer/browsers is an OPTIONAL
- * dependency and is dynamically imported so consumers who only need
- * Playwright-managed builds never require it.
+ * Two-tier source strategy:
+ *  - Chrome-for-Testing (CFT) for major ≥113. CFT is the official, stable,
+ *    non-geo-blocked source Puppeteer/Playwright use. Resolved via
+ *    @puppeteer/browsers `Browser.CHROME`.
+ *  - Chromium continuous snapshots for major 60–112. CFT does not publish these
+ *    older majors; the real binaries live on the `chromium-browser-snapshots`
+ *    bucket keyed by commit-position revision. Resolved via
+ *    @puppeteer/browsers `Browser.CHROMIUM` + a vendored milestone→revision
+ *    table (see chromium-snapshots.ts).
  *
- * Honesty contract: if a real Chrome-for-Testing binary for the requested
- * version cannot be obtained, `install()` throws `HistoricalUnavailableError`.
- * The scanner turns that into an INCONCLUSIVE result for that version — it
- * NEVER substitutes the current Chrome build under the requested version's name,
- * because a verdict from a different version would attribute e.g. a Chrome 151
- * test to Chrome 80.
+ * @puppeteer/browsers is an OPTIONAL dependency, dynamically imported so
+ * consumers who only need Playwright-managed builds never require it.
+ *
+ * Honesty contract: if a real binary for the requested version cannot be
+ * obtained (no CFT build, no curated revision, or download fails — including the
+ * snapshot bucket being geo-blocked in some locations), `install()` throws
+ * `HistoricalUnavailableError`. The scanner turns that into an INCONCLUSIVE
+ * result for that version — it NEVER substitutes another Chrome build under the
+ * requested version's name.
  */
 const INSTALLED_FLAG = 'mrz-installed.json';
 
@@ -50,7 +58,10 @@ export class ChromiumProvider {
     }
 
     try {
-      const historical = await this.downloadChromiumForTesting(requestedMajor, cacheDir);
+      const historical =
+        requestedMajor >= SNAPSHOT_MILESTONE_MAX + 1
+          ? await this.downloadChromiumForTesting(requestedMajor, cacheDir)
+          : await this.downloadChromiumSnapshot(requestedMajor, cacheDir);
       return {
         executablePath: historical.executablePath,
         buildLabel: historical.buildLabel,
@@ -60,6 +71,9 @@ export class ChromiumProvider {
         limitationNote: null,
       };
     } catch (err) {
+      // If a deeper layer already threw the typed error, propagate it as-is so
+      // the code/message survive; otherwise wrap the generic failure.
+      if (err instanceof HistoricalUnavailableError) throw err;
       throw new HistoricalUnavailableError(
         `Could not obtain real Chromium v${requestedMajor} binary: ` +
           `${err instanceof Error ? err.message : String(err)}. This version was not tested.`,
@@ -72,11 +86,11 @@ export class ChromiumProvider {
     return engine === 'chromium';
   }
 
+  /** Download a real Chrome-for-Testing build (major ≥113). */
   private async downloadChromiumForTesting(
     major: number,
     cacheDir: string,
   ): Promise<{ executablePath: string; buildLabel: string }> {
-    // Optional dependency — dynamic import so it isn't required at module load.
     const { install, computeExecutablePath, Browser, resolveBuildId, detectBrowserPlatform } =
       await import('@puppeteer/browsers');
 
@@ -89,11 +103,11 @@ export class ChromiumProvider {
     // real CFT build id is always a full MAJOR.MINOR.BUILD.PATCH (≥3 dots). If we
     // got a bare number back, no CFT build exists for this major: fail honestly
     // up front rather than downloading a 404'ing URL.
-    // (Chrome-for-Testing publishes Linux builds from major 113 onward.)
     if (!/^\d+\.\d+\.\d+\.\d+$/.test(buildId)) {
       throw new HistoricalUnavailableError(
         `Chrome-for-Testing has no build for Chrome ${major}. ` +
-          `CFT publishes builds from major 113 onward; this version was not tested.`,
+          `CFT publishes builds from major ${SNAPSHOT_MILESTONE_MAX + 1} onward; ` +
+          `this version was not tested.`,
         'download-failed',
       );
     }
@@ -112,6 +126,57 @@ export class ChromiumProvider {
     }
 
     const buildLabel = `Chrome for Testing ${buildId}`;
+    await writeManifest(recordPath, { executablePath: fullExe, buildLabel });
+    return { executablePath: fullExe, buildLabel };
+  }
+
+  /**
+   * Download a real Chromium continuous-snapshot build (major 60–112). CFT does
+   * not publish these older majors; the real binaries live on the snapshot
+   * bucket keyed by commit-position revision. @puppeteer/browsers resolves the
+   * URL from a numeric revision via `Browser.CHROMIUM`.
+   */
+  private async downloadChromiumSnapshot(
+    major: number,
+    cacheDir: string,
+  ): Promise<{ executablePath: string; buildLabel: string }> {
+    const revision = snapshotRevisionFor(major);
+    if (!revision) {
+      throw new HistoricalUnavailableError(
+        `No curated Chromium snapshot revision for Chrome ${major}. ` +
+          `Snapshots are supported for majors 60–${SNAPSHOT_MILESTONE_MAX}; this version was not tested.`,
+        'download-failed',
+      );
+    }
+
+    const { install, computeExecutablePath, Browser, detectBrowserPlatform } =
+      await import('@puppeteer/browsers');
+    const platform = detectBrowserPlatform();
+    if (!platform) throw new Error('Unsupported platform for Chromium snapshot download');
+
+    const cache = path.join(cacheDir, 'snapshots');
+    ensureDir(cache);
+    const exe = computeExecutablePath({
+      browser: Browser.CHROMIUM,
+      buildId: `${revision}`,
+      platform,
+      cacheDir: cache,
+    });
+    const fullExe = path.isAbsolute(exe) ? exe : path.join(cache, exe);
+
+    const tag = `chromium-${major}`;
+    const recordPath = path.join(cacheDir, `${tag}-${INSTALLED_FLAG}`);
+    const cached = await readManifest(recordPath);
+    if (cached) return cached;
+
+    if (!existsSync(fullExe)) {
+      // This downloads from chromium-browser-snapshots/{Platform}/{revision}/.
+      // In geo-blocked locations this 403s — caught by the caller and surfaced
+      // as HistoricalUnavailableError → INCONCLUSIVE. Never a substitution.
+      await install({ browser: Browser.CHROMIUM, buildId: `${revision}`, cacheDir: cache, platform });
+    }
+
+    const buildLabel = `Chromium ${major} (snapshot r${revision})`;
     await writeManifest(recordPath, { executablePath: fullExe, buildLabel });
     return { executablePath: fullExe, buildLabel };
   }

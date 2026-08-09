@@ -127,6 +127,9 @@ export const DEFAULTS = {
   holdOpenSec: 2,
   strategy: 'binary' as SearchStrategy,
   stepSize: 10,
+  // Chrome: Chrome-for-Testing (≥113) + Chromium snapshots (60–112) cover the
+  // full range. Firefox: geckodriver drives from 52 onward, so 60 is a safe
+  // floor. WebKit: current-only (no historical off macOS).
   floor: { chromium: 60, firefox: 60, webkit: 13 } as Record<EngineName, number>,
   format: ['json', 'markdown'] as ('json' | 'markdown')[],
   outputDir: './reports',
