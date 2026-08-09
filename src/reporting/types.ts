@@ -1,5 +1,5 @@
 /**
- * Public result & types model for mrz-browser-compat.
+ * Public result & types model for browser-boundary.
  *
  * Design principle: HONESTY over false precision.
  *  - We report *verified* boundaries, never claim a whole supported/unsupported

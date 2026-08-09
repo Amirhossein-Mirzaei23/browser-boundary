@@ -152,18 +152,16 @@ function clean(obj: Record<string, unknown>): Record<string, unknown> {
 }
 
 export const HELP = `
-mrz-browser-compat — find the oldest browser version your website can actually run on.
+browser-boundary — find the oldest browser version your website can actually run on.
 
 Usage:
-  mrz-browser-compat <url> [options]
-  mrz-browser-compat <url> --engines chromium,firefox
-  mrz-browser-compat <url> --pages /,/dashboard --base-url <url>
-  mrz-browser-compat <url> --strategy binary|step-down|latest|explicit
-  mrz-browser-compat <url> --latest-only
-  mrz-browser-compat <url> --headless                                     # run invisibly (headed by default)
-  mrz-browser-compat install                       install current Playwright browsers
-  mrz-browser-compat --version
-  mrz-browser-compat --help
+  browser-boundary <url> [options]
+  browser-boundary <url> --engines chromium,firefox
+  browser-boundary <url> --pages /,/dashboard --base-url <url>
+  browser-boundary <url> --strategy binary|step-down|latest|explicit
+  browser-boundary <url> --latest-only
+  browser-boundary install                       install current Playwright browsers
+  browser-boundary --help
 
 Options:
   -v, --version             print the app version and exit

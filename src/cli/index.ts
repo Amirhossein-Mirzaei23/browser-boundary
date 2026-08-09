@@ -12,7 +12,7 @@ import type { ScanConfig } from '../config/schema.js';
  *   2 = configuration error
  *   3 = infrastructure / browser error
  *
- * This file is what `bin/mrz-browser-compat` resolves to after build.
+ * This file is what `bin/browser-boundary` resolves to after build.
  */
 
 const EXIT = {
@@ -47,14 +47,14 @@ async function main(): Promise<number> {
 
   // scan
   if (!parsed.config.urls?.length) {
-    console.error('Configuration error: a URL is required. Run `mrz-browser-compat --help`.');
+    console.error('Configuration error: a URL is required. Run `browser-boundary --help`.');
     return EXIT.CONFIG_ERROR;
   }
 
   // resolveConfig will validate and apply defaults; wrap in try/catch below.
   const scanConfig = parsed.config as ScanConfig;
 
-  console.log('mrz-browser-compat');
+  console.log('browser-boundary');
   console.log('------------------');
   console.log(`URLs:    ${parsed.config.urls.join(', ')}`);
   console.log(`Engines: ${(parsed.config.engines ?? ['chromium', 'firefox', 'webkit']).join(', ')}`);

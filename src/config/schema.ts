@@ -112,7 +112,7 @@ export interface ScanConfig {
   };
 
   cache?: {
-    directory?: string;       // default ~/.cache/mrz-browser-compat
+    directory?: string;       // default ~/.cache/browser-boundary
   };
 }
 
@@ -130,7 +130,7 @@ export const DEFAULTS = {
   floor: { chromium: 60, firefox: 60, webkit: 13 } as Record<EngineName, number>,
   format: ['json', 'markdown'] as ('json' | 'markdown')[],
   outputDir: './reports',
-  cacheDir: '~/.cache/mrz-browser-compat',
+  cacheDir: '~/.cache/browser-boundary',
   criticalResourceTypes: ['script', 'stylesheet', 'xhr', 'fetch', 'font'] as ResourceType[],
   minConfidence: 'low' as const,
 } as const;
