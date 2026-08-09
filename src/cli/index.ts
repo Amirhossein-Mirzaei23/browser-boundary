@@ -1,4 +1,5 @@
 import { parseCli, HELP, type ParsedCli } from './options.js';
+import { VERSION } from './version.js';
 import { scan } from '../core/scanner.js';
 import { writeJson, writeMarkdown, type ScanResult } from '../reporting/index.js';
 import { ConfigError } from '../config/resolve.js';
@@ -32,6 +33,11 @@ async function main(): Promise<number> {
 
   if (parsed.command === 'help') {
     console.log(HELP);
+    return EXIT.OK;
+  }
+
+  if (parsed.command === 'version') {
+    console.log(VERSION);
     return EXIT.OK;
   }
 

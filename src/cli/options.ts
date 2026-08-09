@@ -13,6 +13,8 @@ const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     help: { type: 'boolean', short: 'h', default: false },
+    version: { type: 'boolean', short: 'v', default: false },
+    headless: { type: 'boolean', default: false },
     engines: { type: 'string' },
     pages: { type: 'string' },
     'base-url': { type: 'string' },
@@ -34,12 +36,15 @@ const { values, positionals } = parseArgs({
 });
 
 export interface ParsedCli {
-  command: 'scan' | 'install' | 'help';
+  command: 'scan' | 'install' | 'help' | 'version';
   url: string | null;
   config: Partial<ScanConfig>;
 }
 
 export function parseCli(): ParsedCli {
+  if (values.version || positionals[0] === 'version') {
+    return { command: 'version', url: null, config: {} };
+  }
   if (values.help || positionals[0] === 'help') {
     return { command: 'help', url: null, config: {} };
   }
@@ -72,7 +77,9 @@ export function parseCli(): ParsedCli {
 
   const strategy = (values.strategy ?? process.env.MRZ_STRATEGY) as SearchStrategy | undefined;
   const latestOnly = values['latest-only'] || envBool('MRZ_LATEST_ONLY') || envBool('BC_LATEST_ONLY');
-  const headed = values.headed || envBool('HEADED') || envBool('MRZ_HEADED') || envBool('BC_HEADED');
+  // Headed (visible windows) is the DEFAULT. --headless opts into running
+  // invisibly. The MRZ_HEADLESS / BC_HEADLESS env vars do the same.
+  const headless = values.headless || envBool('MRZ_HEADLESS') || envBool('BC_HEADLESS');
 
   const format = (values.format ?? process.env.MRZ_FORMAT)?.split(',').map((s) => s.trim()) as
     | ('json' | 'markdown')[]
@@ -98,7 +105,8 @@ export function parseCli(): ParsedCli {
         ? false
         : undefined,
     holdOpenSec: num(values['hold-open'] ?? process.env.MRZ_HOLD_OPEN),
-    headed,
+    // Headed is the default; --headless inverts it.
+    headed: headless ? false : true,
     output: {
       format,
       directory: values.output ?? process.env.MRZ_REPORTS_DIR ?? process.env.BC_REPORTS_DIR,
@@ -152,22 +160,25 @@ Usage:
   mrz-browser-compat <url> --pages /,/dashboard --base-url <url>
   mrz-browser-compat <url> --strategy binary|step-down|latest|explicit
   mrz-browser-compat <url> --latest-only
+  mrz-browser-compat <url> --headless                                     # run invisibly (headed by default)
   mrz-browser-compat install                       install current Playwright browsers
+  mrz-browser-compat --version
   mrz-browser-compat --help
 
 Options:
+  -v, --version             print the app version and exit
   --engines <list>          chromium,firefox,webkit (default: all)
   --pages <list>            comma-sep paths or URLs to also test
   --base-url <url>          base for relative --pages
   --strategy <s>            binary | step-down | latest | explicit (default: binary)
   --latest-only             probe only the current build per engine
-  --headed                  show browser windows
+  --headless                run browsers invisibly (default: headed, windows shown)
   --format <list>           json,markdown (default: both)
   -o, --output <dir>        report directory (default: ./reports)
   --timeout <ms>            per-page readiness/navigation timeout (default: 30000)
   --wait-until <event>      domcontentloaded | load  (default: domcontentloaded)
   --http-cache              allow the browser HTTP cache (default: disabled for accuracy)
-  --hold-open <sec>         seconds to keep the window open after checks, to fully load (default: 0)
+  --hold-open <sec>         seconds to keep the window open after checks, to fully load (default: 2)
   --step-size <n>           major-version step before binary search (default: 10)
   --readiness-selector <s>  require this CSS selector (repeatable; default any)
   --readiness-mode <m>      any | all (default: any)
@@ -176,7 +187,7 @@ Options:
 
 Environment (MRZ_* and legacy BC_* equivalents supported):
   MRZ_ENGINES, MRZ_LATEST_ONLY, MRZ_STRATEGY, MRZ_TIMEOUT_MS, MRZ_STEP_SIZE,
-  MRZ_REPORTS_DIR, MRZ_FORMAT, MRZ_HEADED, MRZ_MIN_CONFIDENCE
+  MRZ_REPORTS_DIR, MRZ_FORMAT, MRZ_HEADLESS, MRZ_MIN_CONFIDENCE
 
 Exit codes:
   0  scan completed

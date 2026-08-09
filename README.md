@@ -41,8 +41,8 @@ npx mrz-browser-compat https://example.com --pages /,/dashboard --base-url https
 npx mrz-browser-compat https://example.com --strategy binary      # default: step-down + binary search
 npx mrz-browser-compat https://example.com --strategy latest      # probe current build only
 npx mrz-browser-compat https://example.com --latest-only
-npx mrz-browser-compat https://example.com --headed
-npx mrz-browser-compat https://example.com --headed --hold-open 8          # keep window open 8s after checks
+npx mrz-browser-compat https://example.com --headless                       # run invisibly (headed by default)
+npx mrz-browser-compat https://example.com --hold-open 8                    # keep window open 8s after checks (default: 2)
 npx mrz-browser-compat https://example.com --format json --output ./reports
 npx mrz-browser-compat https://example.com --readiness-selector main --readiness-mode any
 npx mrz-browser-compat https://example.com --min-confidence high
@@ -103,9 +103,9 @@ await scan({
   hooks?: { beforeGoto?: (...) => Promise<void> };  // opt-in (e.g. anti-bot warm-up)
   waitUntil?: 'domcontentloaded' | 'load';  // default: domcontentloaded (use 'load' for full page)
   disableHttpCache?: boolean;        // default true (cached 200 can mask real failures)
-  holdOpenSec?: number;              // default 0 (hold window open N sec after checks; great with --headed)
+  holdOpenSec?: number;              // default 2 (hold window open N sec after checks; great in headed mode)
   timeout?: number;                  // default 30000
-  headed?: boolean;                  // default false
+  headed?: boolean;                  // default true
   retries?: number;                  // default 3 (transient only)
   output?: { format?: ('json' | 'markdown')[]; directory?: string };
   cache?: { directory?: string };    // default ~/.cache/mrz-browser-compat
