@@ -8,6 +8,16 @@
 
 It tests **Chromium**, **Firefox**, and **WebKit** using **real historical browser binaries** (Chrome-for-Testing driven by Playwright/CDP; Firefox from archive.mozilla.org driven by geckodriver/WebDriver) — it never fakes versions by changing the User-Agent.
 
+## Try it on https://www.whatsmybrowser.org/
+
+A great first test: [whatsmybrowser.org](https://www.whatsmybrowser.org/) renders the **actual** browser version, engine, and user-agent of whatever loads it. Point the tool at it and watch the reported version step down as the scan probes older binaries — visible proof that this tool runs *real historical browser builds*, not a faked User-Agent string:
+
+```bash
+npx mrz-browser-compat https://www.whatsmybrowser.org/ --headed
+```
+
+The page it loads literally tells you which Chrome/Firefox opened it. If the version you see on screen matches the version the scan is probing, the binary is genuine.
+
 ## What it is (and isn't)
 
 - **It is** a tool that finds the verified compatibility *boundary* per browser engine: "oldest verified passing version" and "first verified failing version."
@@ -36,6 +46,7 @@ npx mrz-browser-compat install
 
 ```bash
 npx mrz-browser-compat https://example.com
+npx mrz-browser-compat https://www.whatsmybrowser.org/   # great first test (see below)
 npx mrz-browser-compat https://example.com --engines chromium,firefox
 npx mrz-browser-compat https://example.com --pages /,/dashboard --base-url https://example.com
 npx mrz-browser-compat https://example.com --strategy binary      # default: step-down + binary search

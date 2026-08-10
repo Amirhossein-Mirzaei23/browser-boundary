@@ -50,6 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- README recommends https://www.whatsmybrowser.org/ as a quick first-test
+  target: the page renders the *actual* browser version/engine/UA of whatever
+  loads it, giving visible proof that the tool drives real historical binaries
+  rather than spoofing the User-Agent.
 - Generic reusable npm package `mrz-browser-compat` (extracted from the
   Tabdeal-specific prototype). The core engine now has **no** site-specific
   knowledge.
