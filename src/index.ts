@@ -1,5 +1,5 @@
 /**
- * mrz-browser-compat
+ * browser-boundary
  *
  * Find the oldest real browser version your website can actually run on.
  * Detects compatibility boundaries across Chromium/Firefox/WebKit using REAL

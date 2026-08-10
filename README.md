@@ -1,8 +1,8 @@
-# mrz-browser-compat
+# browser-boundary
 
 > Find the oldest browser version your website can actually run on.
 
-`mrz-browser-compat` is a **browser compatibility boundary detector** for real websites. It answers:
+`browser-boundary` is a **browser compatibility boundary detector** for real websites. It answers:
 
 > What is the oldest real browser version that can successfully run this website?
 
@@ -30,13 +30,13 @@ Normal Playwright tests check that *your current browser* behaves correctly. Thi
 ## Installation
 
 ```bash
-npm install -D mrz-browser-compat
+npm install -D @amirhossein-mirzaei23/browser-boundary
 ```
 
 Playwright is a **peer dependency** — install browsers once:
 
 ```bash
-npx mrz-browser-compat install
+npx browser-boundary install
 # equivalent to: npx playwright install chromium firefox webkit
 ```
 
@@ -45,21 +45,20 @@ npx mrz-browser-compat install
 ## CLI usage
 
 ```bash
-npx mrz-browser-compat https://example.com
-npx mrz-browser-compat https://www.whatsmybrowser.org/   # great first test (see below)
-npx mrz-browser-compat https://example.com --engines chromium,firefox
-npx mrz-browser-compat https://example.com --pages /,/dashboard --base-url https://example.com
-npx mrz-browser-compat https://example.com --strategy binary      # default: step-down + binary search
-npx mrz-browser-compat https://example.com --strategy latest      # probe current build only
-npx mrz-browser-compat https://example.com --latest-only
-npx mrz-browser-compat https://example.com --headless                       # run invisibly (headed by default)
-npx mrz-browser-compat https://example.com --hold-open 8                    # keep window open 8s after checks (default: 2)
-npx mrz-browser-compat https://example.com --format json --output ./reports
-npx mrz-browser-compat https://example.com --readiness-selector main --readiness-mode any
-npx mrz-browser-compat https://example.com --min-confidence high
-npx mrz-browser-compat https://example.com --wait-until load               # wait for full page load (default: domcontentloaded)
-npx mrz-browser-compat https://example.com --http-cache                   # re-enable browser cache (disabled by default for accuracy)
-npx mrz-browser-compat --help
+npx browser-boundary https://example.com
+npx browser-boundary https://example.com --engines chromium,firefox
+npx browser-boundary https://example.com --pages /,/dashboard --base-url https://example.com
+npx browser-boundary https://example.com --strategy binary      # default: step-down + binary search
+npx browser-boundary https://example.com --strategy latest      # probe current build only
+npx browser-boundary https://example.com --latest-only
+npx browser-boundary https://example.com --headed
+npx browser-boundary https://example.com --headed --hold-open 8          # keep window open 8s after checks
+npx browser-boundary https://example.com --format json --output ./reports
+npx browser-boundary https://example.com --readiness-selector main --readiness-mode any
+npx browser-boundary https://example.com --min-confidence high
+npx browser-boundary https://example.com --wait-until load               # wait for full page load (default: domcontentloaded)
+npx browser-boundary https://example.com --http-cache                   # re-enable browser cache (disabled by default for accuracy)
+npx browser-boundary --help
 ```
 
 Environment variables (`MRZ_*`, with legacy `BC_*` aliases) are also supported; flags take precedence.
@@ -67,7 +66,7 @@ Environment variables (`MRZ_*`, with legacy `BC_*` aliases) are also supported; 
 ## Library usage
 
 ```ts
-import { scan } from 'mrz-browser-compat';
+import { scan } from '@amirhossein-mirzaei23/browser-boundary';
 
 const result = await scan({
   urls: ['https://example.com', 'https://example.com/about'],
@@ -119,7 +118,7 @@ await scan({
   headed?: boolean;                  // default true
   retries?: number;                  // default 3 (transient only)
   output?: { format?: ('json' | 'markdown')[]; directory?: string };
-  cache?: { directory?: string };    // default ~/.cache/mrz-browser-compat
+  cache?: { directory?: string };    // default ~/.cache/browser-boundary
 }
 ```
 
@@ -188,7 +187,7 @@ Exit codes distinguish outcomes:
 | 3 | infrastructure / browser error |
 
 ```bash
-npx mrz-browser-compat https://staging.example.com --strategy latest
+npx browser-boundary https://staging.example.com --strategy latest
 ```
 
 ## Historical browser limitations
@@ -207,7 +206,7 @@ So WebKit results are always the **current Playwright build** and are reported w
 
 ## Browser binary caching
 
-Real historical binaries are cached under `~/.cache/mrz-browser-compat/` (global, shared across projects; overridable via `cache.directory` or `MRZ_BROWSER_CACHE`). A manifest deduplicates downloads so a version isn't re-fetched.
+Real historical binaries are cached under `~/.cache/browser-boundary/` (global, shared across projects; overridable via `cache.directory` or `MRZ_BROWSER_CACHE`). A manifest deduplicates downloads so a version isn't re-fetched.
 
 ## Security / privacy
 
