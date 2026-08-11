@@ -4,8 +4,14 @@ import type { EngineName } from '../reporting/types.js';
 import type { BrowserBinary, BrowserVersion } from './types.js';
 import { HistoricalUnavailableError } from './types.js';
 import { PlaywrightProvider } from './playwright-provider.js';
-import { ensureDir, readManifest, writeManifest } from './util.js';
-import { snapshotRevisionFor, SNAPSHOT_MILESTONE_MAX } from './chromium-snapshots.js';
+import { cleanDir, downloadFile, ensureDir, extractZip, readManifest, writeManifest } from './util.js';
+import {
+  snapshotRevisionFor,
+  probeSnapshotRevision,
+  findNearestAvailableSnapshotRevision,
+  SNAPSHOT_LINUX_FOLDER,
+  SNAPSHOT_MILESTONE_MAX,
+} from './chromium-snapshots.js';
 
 /**
  * Chromium historical provider — REAL binaries for Chrome 60 through current.
@@ -16,19 +22,22 @@ import { snapshotRevisionFor, SNAPSHOT_MILESTONE_MAX } from './chromium-snapshot
  *    @puppeteer/browsers `Browser.CHROME`.
  *  - Chromium continuous snapshots for major 60–112. CFT does not publish these
  *    older majors; the real binaries live on the `chromium-browser-snapshots`
- *    bucket keyed by commit-position revision. Resolved via
- *    @puppeteer/browsers `Browser.CHROMIUM` + a vendored milestone→revision
- *    table (see chromium-snapshots.ts).
+ *    bucket keyed by commit-position revision. Resolved via a vendored
+ *    milestone→revision table (see chromium-snapshots.ts) PLUS a fallback that
+ *    discovers the nearest still-available revision when the curated one has
+ *    been pruned from the bucket (see `findNearestAvailableSnapshotRevision`).
  *
  * @puppeteer/browsers is an OPTIONAL dependency, dynamically imported so
  * consumers who only need Playwright-managed builds never require it.
  *
  * Honesty contract: if a real binary for the requested version cannot be
- * obtained (no CFT build, no curated revision, or download fails — including the
- * snapshot bucket being geo-blocked in some locations), `install()` throws
- * `HistoricalUnavailableError`. The scanner turns that into an INCONCLUSIVE
- * result for that version — it NEVER substitutes another Chrome build under the
- * requested version's name.
+ * obtained (no CFT build, no curated revision, no nearby revision available, or
+ * download fails — including the snapshot bucket being geo-blocked in some
+ * locations), `install()` throws `HistoricalUnavailableError`. The scanner turns
+ * that into an INCONCLUSIVE result for that version — it NEVER substitutes
+ * another Chrome build under the requested version's name. The fallback NEVER
+ * crosses a milestone boundary: it only picks a revision within the same
+ * ~6-week release window as the curated one.
  */
 const INSTALLED_FLAG = 'mrz-installed.json';
 
@@ -133,15 +142,31 @@ export class ChromiumProvider {
   /**
    * Download a real Chromium continuous-snapshot build (major 60–112). CFT does
    * not publish these older majors; the real binaries live on the snapshot
-   * bucket keyed by commit-position revision. @puppeteer/browsers resolves the
-   * URL from a numeric revision via `Browser.CHROMIUM`.
+   * bucket keyed by commit-position revision.
+   *
+   * The snapshot bucket continuously prunes old builds, so a curated revision
+   * may 404 even though nearby revisions in the same milestone window are still
+   * present. This method:
+   *   1. Probes the curated revision (HEAD). If it exists, use it.
+   *   2. If it was pruned (404), discover the nearest still-available revision
+   *      in the same milestone window via outward HEAD probing
+   *      (`findNearestAvailableSnapshotRevision`).
+   *   3. If the bucket is unreachable (401/403 geo-block, network), fail
+   *      immediately without probing further — every nearby revision would be
+   *      unreachable too.
+   *   4. Downloads + extracts the `chrome-linux.zip` directly (so we control
+   *      the exact revision, not just what @puppeteer/browsers would accept).
+   *
+   * If neither the curated revision nor any nearby one is available, throws
+   * `HistoricalUnavailableError` → INCONCLUSIVE. Never substitutes a build from
+   * a DIFFERENT milestone (the outward probe stays in-window).
    */
   private async downloadChromiumSnapshot(
     major: number,
     cacheDir: string,
   ): Promise<{ executablePath: string; buildLabel: string }> {
-    const revision = snapshotRevisionFor(major);
-    if (!revision) {
+    const curated = snapshotRevisionFor(major);
+    if (!curated) {
       throw new HistoricalUnavailableError(
         `No curated Chromium snapshot revision for Chrome ${major}. ` +
           `Snapshots are supported for majors 60–${SNAPSHOT_MILESTONE_MAX}; this version was not tested.`,
@@ -149,20 +174,36 @@ export class ChromiumProvider {
       );
     }
 
-    const { install, computeExecutablePath, Browser, detectBrowserPlatform } =
-      await import('@puppeteer/browsers');
-    const platform = detectBrowserPlatform();
-    if (!platform) throw new Error('Unsupported platform for Chromium snapshot download');
+    // Resolve the actual revision to download: the curated one if it still
+    // exists, otherwise the nearest available one in the same milestone window.
+    let revision = curated;
+    const curatedProbe = await probeSnapshotRevision(curated);
+    if (curatedProbe !== 'ok') {
+      if (curatedProbe === 'unreachable') {
+        // Geo-block / network failure: the whole bucket is unreachable from
+        // here. No point probing nearby revisions — they'll fail identically.
+        throw new HistoricalUnavailableError(
+          `Chromium snapshot bucket is unreachable (geo-blocked or network error) for Chrome ${major}; ` +
+            `this version was not tested.`,
+          'download-failed',
+        );
+      }
+      // 'pruned' (404) — a nearby revision may still exist; fall back.
+      const nearby = await findNearestAvailableSnapshotRevision(curated);
+      if (!nearby) {
+        throw new HistoricalUnavailableError(
+          `Chromium snapshot r${curated} for Chrome ${major} is no longer on the bucket and ` +
+            `no nearby revision in the same milestone window is available. This version was not tested.`,
+          'download-failed',
+        );
+      }
+      revision = nearby;
+    }
 
     const cache = path.join(cacheDir, 'snapshots');
     ensureDir(cache);
-    const exe = computeExecutablePath({
-      browser: Browser.CHROMIUM,
-      buildId: `${revision}`,
-      platform,
-      cacheDir: cache,
-    });
-    const fullExe = path.isAbsolute(exe) ? exe : path.join(cache, exe);
+    const extractDir = path.join(cache, `chromium-${major}-${revision}`);
+    const fullExe = path.join(extractDir, 'chrome-linux', 'chrome');
 
     const tag = `chromium-${major}`;
     const recordPath = path.join(cacheDir, `${tag}-${INSTALLED_FLAG}`);
@@ -170,13 +211,24 @@ export class ChromiumProvider {
     if (cached) return cached;
 
     if (!existsSync(fullExe)) {
-      // This downloads from chromium-browser-snapshots/{Platform}/{revision}/.
-      // In geo-blocked locations this 403s — caught by the caller and surfaced
-      // as HistoricalUnavailableError → INCONCLUSIVE. Never a substitution.
-      await install({ browser: Browser.CHROMIUM, buildId: `${revision}`, cacheDir: cache, platform });
+      const zipUrl =
+        `https://storage.googleapis.com/chromium-browser-snapshots/` +
+        `${SNAPSHOT_LINUX_FOLDER}/${revision}/chrome-linux.zip`;
+      const archive = path.join(cache, `chrome-linux-${revision}.zip`);
+      try {
+        if (!existsSync(archive)) await downloadFile(zipUrl, archive);
+        await cleanDir(extractDir);
+        extractZip(archive, extractDir);
+      } catch (err) {
+        // Partial download/extraction must not leave a fake cache hit.
+        throw err instanceof Error ? err : new Error(String(err));
+      }
     }
 
-    const buildLabel = `Chromium ${major} (snapshot r${revision})`;
+    const buildLabel =
+      revision === curated
+        ? `Chromium ${major} (snapshot r${revision})`
+        : `Chromium ${major} (snapshot r${revision}, nearest to curated r${curated})`;
     await writeManifest(recordPath, { executablePath: fullExe, buildLabel });
     return { executablePath: fullExe, buildLabel };
   }

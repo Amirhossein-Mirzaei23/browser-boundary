@@ -1,10 +1,30 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { ChromiumProvider } from '../../src/browsers/chromium-provider.js';
 import { HistoricalUnavailableError } from '../../src/browsers/types.js';
+
+/**
+ * Stub globalThis.fetch so the snapshot discovery/existence checks are hermetic.
+ * HEAD requests for `chrome-linux.zip` return a status based on `headStatus`
+ * (default 404 = pruned). 200 = present, 403 = geo-blocked, 404 = pruned.
+ */
+type FetchImpl = typeof fetch;
+const originalFetch: FetchImpl = globalThis.fetch;
+
+function stubFetch(headStatus: Record<number, number>): void {
+  globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (init?.method === 'HEAD') {
+      const m = url.match(/\/(\d+)\/chrome-linux\.zip$/);
+      const rev = m ? Number(m[1]) : -1;
+      return new Response(null, { status: headStatus[rev] ?? 404 });
+    }
+    return new Response('not found', { status: 404 });
+  }) as FetchImpl;
+}
 
 /**
  * Honesty contract for Chromium: a historical binary that cannot be obtained is
@@ -100,4 +120,100 @@ test('REGRESSION: a major with no curated snapshot revision throws HistoricalUna
       return true;
     },
   );
+});
+
+/**
+ * Fallback behavior: the snapshot bucket prunes old builds, so a curated
+ * revision can 404 while nearby revisions (same milestone window) are still
+ * present. The provider must fall back to the nearest available revision and
+ * report it honestly in the build label. If NONE is available, it throws
+ * HistoricalUnavailableError (INCONCLUSIVE) — never a cross-milestone
+ * substitution.
+ */
+
+test('downloadChromiumSnapshot uses the curated revision when it still exists (no fallback)', async () => {
+  const c = new ChromiumProvider();
+  // Curated revision 1014680 (Chrome 111) is present in the bucket.
+  stubFetch({ 1014680: 200 });
+  try {
+    const cache = mkdtempSync(path.join(tmpdir(), 'mrz-chromium-curated-'));
+    // Pre-create the executable at the curated revision's path so the download
+    // branch is skipped — we are testing revision SELECTION, not extraction.
+    const exe = path.join(cache, 'snapshots', 'chromium-111-1014680', 'chrome-linux', 'chrome');
+    mkdirSync(path.dirname(exe), { recursive: true });
+    writeFileSync(exe, '');
+
+    const result = await (c as unknown as { downloadChromiumSnapshot: (m: number, d: string) => Promise<{ buildLabel: string }> }).downloadChromiumSnapshot(111, cache);
+    assert.match(result.buildLabel, /r1014680/);
+    assert.doesNotMatch(result.buildLabel, /nearest/, 'curated build label must not mention "nearest"');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('downloadChromiumSnapshot falls back to the nearest available revision when curated is pruned', async () => {
+  const c = new ChromiumProvider();
+  // Curated 1014680 is pruned (404); r+2=1014682 is the first present revision.
+  stubFetch({ 1014682: 200 });
+  try {
+    const cache = mkdtempSync(path.join(tmpdir(), 'mrz-chromium-fallback-'));
+    // Pre-create the executable at the FALLBACK revision's path.
+    const exe = path.join(cache, 'snapshots', 'chromium-111-1014682', 'chrome-linux', 'chrome');
+    mkdirSync(path.dirname(exe), { recursive: true });
+    writeFileSync(exe, '');
+
+    const result = await (c as unknown as { downloadChromiumSnapshot: (m: number, d: string) => Promise<{ buildLabel: string }> }).downloadChromiumSnapshot(111, cache);
+    assert.match(result.buildLabel, /r1014682/);
+    assert.match(result.buildLabel, /nearest to curated r1014680/, 'must honestly report it is a fallback');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('downloadChromiumSnapshot throws HistoricalUnavailableError when no nearby revision is available', async () => {
+  const c = new ChromiumProvider();
+  // Everything is pruned (404) — no curated, no nearby.
+  stubFetch({});
+  try {
+    const cache = mkdtempSync(path.join(tmpdir(), 'mrz-chromium-nofallback-'));
+    await assert.rejects(
+      () => (c as unknown as { downloadChromiumSnapshot: (m: number, d: string) => Promise<unknown> }).downloadChromiumSnapshot(111, cache),
+      (err: unknown) => {
+        assert.ok(err instanceof HistoricalUnavailableError);
+        assert.equal((err as HistoricalUnavailableError).code, 'download-failed');
+        assert.match((err as Error).message, /no longer on the bucket/);
+        assert.match((err as Error).message, /not tested/);
+        return true;
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('downloadChromiumSnapshot throws HistoricalUnavailableError immediately on geo-block (no probing)', async () => {
+  const c = new ChromiumProvider();
+  // The bucket returns 403 for every probe — a geo-block.
+  stubFetch({ 1014680: 403 });
+  let headCalls = 0;
+  const wrapped = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
+    if (init?.method === 'HEAD') headCalls++;
+    return wrapped(input, init);
+  }) as FetchImpl;
+  try {
+    const cache = mkdtempSync(path.join(tmpdir(), 'mrz-chromium-geoblock-'));
+    await assert.rejects(
+      () => (c as unknown as { downloadChromiumSnapshot: (m: number, d: string) => Promise<unknown> }).downloadChromiumSnapshot(111, cache),
+      (err: unknown) => {
+        assert.ok(err instanceof HistoricalUnavailableError);
+        assert.equal((err as HistoricalUnavailableError).code, 'download-failed');
+        assert.match((err as Error).message, /unreachable/);
+        return true;
+      },
+    );
+    assert.equal(headCalls, 1, 'must not probe further after a geo-block');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
