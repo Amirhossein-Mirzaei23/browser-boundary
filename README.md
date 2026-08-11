@@ -6,7 +6,17 @@
 
 > What is the oldest real browser version that can successfully run this website?
 
-It tests **Chromium**, **Firefox**, and **WebKit** using **real historical browser binaries** (Chrome-for-Testing, archive.mozilla.org) — it never fakes versions by changing the User-Agent.
+It tests **Chromium**, **Firefox**, and **WebKit** using **real historical browser binaries** (Chrome-for-Testing driven by Playwright/CDP; Firefox from archive.mozilla.org driven by geckodriver/WebDriver) — it never fakes versions by changing the User-Agent.
+
+## Try it on https://www.whatsmybrowser.org/
+
+A great first test: [whatsmybrowser.org](https://www.whatsmybrowser.org/) renders the **actual** browser version, engine, and user-agent of whatever loads it. Point the tool at it and watch the reported version step down as the scan probes older binaries — visible proof that this tool runs *real historical browser builds*, not a faked User-Agent string:
+
+```bash
+npx mrz-browser-compat https://www.whatsmybrowser.org/ --headed
+```
+
+The page it loads literally tells you which Chrome/Firefox opened it. If the version you see on screen matches the version the scan is probing, the binary is genuine.
 
 ## What it is (and isn't)
 
@@ -118,11 +128,13 @@ The core has **no** hardcoded knowledge of any website — selectors, analytics 
 
 | Engine | Real historical binaries? | How |
 |---|---|---|
-| Chromium | ✅ | Chrome-for-Testing via `@puppeteer/browsers` (CDP is native to every Chrome build) |
-| Firefox | ⚠️ current-only | Playwright's patched Firefox build only (see note below) |
-| WebKit | ⚠️ current-only | Playwright's patched WebKit build only |
+| Chromium | ✅ | Chrome-for-Testing via `@puppeteer/browsers`, driven by Playwright/CDP (CDP is native to every Chrome build) |
+| Firefox | ✅ (≥52) | Real builds from archive.mozilla.org, driven by **geckodriver / W3C WebDriver** (not Playwright — see below) |
+| WebKit | ⚠️ current-only | Playwright's patched WebKit build only — historical Safari is macOS-locked |
 
-> **Why only Chromium gets real historical testing:** Chromium's DevTools Protocol (CDP) is built into every Chrome build, so Chrome-for-Testing binaries are directly drivable by Playwright. Firefox and WebKit require Playwright's own instrumentation patches (Juggler for Firefox) to be driven — vanilla Firefox builds from `archive.mozilla.org` launch then immediately exit, and Apple doesn't publish drivable historical Safari/WebKit. So only the **current** Playwright Firefox/WebKit build is testable. The tool reports this honestly with a `versionType` of `'playwright-revision'` and never claims a specific Firefox/Safari version it can't prove.
+> **Why Firefox uses geckodriver, not Playwright:** Playwright can only drive its *own* patched Firefox build (which contains the Juggler instrumentation protocol). Vanilla release builds from `archive.mozilla.org` lack Juggler — they launch and exit immediately without responding. So historical Firefox is driven by geckodriver, which speaks **Marionette** (built into every Firefox ≥48). The tool downloads the right geckodriver per Firefox version from a vendored compatibility matrix. Firefox < 52 (geckodriver's floor) is reported **inconclusive**, never substituted.
+>
+> **Why WebKit stays current-only:** Safari is macOS-only and version-locked to macOS — there is no standalone historical Safari archive, and Playwright's WebKit patch only ships a current build. Historical Safari needs macOS hardware or a cloud-device service (not supported here).
 
 ## Version search algorithm
 
@@ -180,18 +192,17 @@ npx browser-boundary https://staging.example.com --strategy latest
 
 ## Historical browser limitations
 
-- Playwright ships **one build per engine per release**; `playwright install <engine>@N` is unsupported. Historical Chrome/Firefox are fetched from Chrome-for-Testing / archive.mozilla.org and passed to Playwright via `executablePath`.
-- Very old builds may not run on modern Linux (sandbox/ABI/glibc). Set `search.floor` to keep the search above realistic floors (defaults 60/60).
+- Playwright ships **one build per engine per release**; `playwright install <engine>@N` is unsupported. Historical Chrome is fetched via Chrome-for-Testing (driven by Playwright/CDP); historical Firefox is fetched from archive.mozilla.org (driven by geckodriver/WebDriver).
+- **A version that cannot be obtained is reported `inconclusive`, never substituted.** If a real historical binary for the requested version can't be downloaded or driven, the tool records `inconclusive` for that exact version — it never tests a *different* version (e.g. current) and reports it under the requested version's name. This applies to both Chrome and Firefox.
+- **Firefox < 52** is below geckodriver's supported floor and cannot be driven. Below ~ESR 52, modern HTTPS may also fail (TLS/cipher support) even when drivable.
+- Very old Chrome builds may not run on modern Linux (sandbox/ABI/glibc). Set `search.floor` to keep the search above realistic floors (defaults: chromium 60, firefox 60, webkit 13).
 - User-Agent is **never** changed — that is not equivalent to running an older engine.
 
-## Firefox & WebKit limitations (historical testing)
+## WebKit limitations (historical testing)
 
-Only **Chromium** supports real historical browser testing. Firefox and WebKit both require Playwright's own instrumentation patches to be driven:
+Historical **Safari/WebKit cannot be tested** off Apple hardware. Safari is distributed only via macOS Software Update, is version-locked to macOS, and Apple does not publish standalone drivable historical binaries. Playwright's WebKit is a patched current build only.
 
-- **Firefox** — vanilla release builds from `archive.mozilla.org` lack Playwright's Juggler protocol; they launch then immediately exit. Only the current Playwright Firefox build works.
-- **WebKit** — Apple doesn't publish standalone drivable historical Safari/WebKit binaries, and Playwright doesn't pin historical WebKit builds.
-
-So Firefox/WebKit results are always the **current Playwright build** and are reported with `versionType: 'playwright-revision'`. They are **not** equivalent to a specific Firefox/Safari version. Don't stringify them as "Firefox N" or "Safari N". The tool proactively probes these engines latest-only and notes the limitation in the report.
+So WebKit results are always the **current Playwright build** and are reported with `versionType: 'playwright-revision'`. They are **not** equivalent to a specific Safari version. Don't stringify them as "Safari N". The tool probes WebKit latest-only and notes the limitation in the report. (Historical Safari would require a macOS CI matrix with matching macOS images, or a cloud-device service such as BrowserStack.)
 
 ## Browser binary caching
 

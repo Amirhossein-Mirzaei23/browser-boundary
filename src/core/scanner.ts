@@ -14,6 +14,8 @@ import {
   type ResolvedPage,
 } from '../config/resolve.js';
 import { defaultBrowserProvider, type BrowserProvider } from '../browsers/provider.js';
+import { HistoricalUnavailableError } from '../browsers/types.js';
+import { checkEngineDeps } from './dependencies.js';
 import { runCheckWithRetry } from './compatibility-checker.js';
 import { searchBoundary, versionRange } from './version-search.js';
 import { aggregateFeatureFindings } from '../analysis/error-analyzer.js';
@@ -106,11 +108,11 @@ export class BrowserCompatibilityScanner {
     const versionType = latest.versionType;
 
     // Engines that can't provide historical binaries (WebKit: no drivable
-    // historical Safari; Firefox: archive builds lack Playwright's Juggler
-    // patch) are probed latest-only. Same for the explicit 'latest' strategy.
+    // historical Safari off macOS) are probed latest-only. Chromium and Firefox
+    // both support real historical binaries. Same for the explicit 'latest' strategy.
     const historicalCapable = this.provider.supportsHistoricalVersions(engine);
     if (!historicalCapable || cfg.strategy === 'latest') {
-      log(`${cap(engine)}: only the current Playwright build is drivable; probing latest only.`);
+      log(`${cap(engine)}: current build only; probing latest.`);
       const tested: string[] = [];
       for (const page of pages) {
         const r = await this.probe(engine, latest.version, versionType, page, log);
@@ -120,7 +122,29 @@ export class BrowserCompatibilityScanner {
       return this.buildSummary(engine, versionType, results, tested, latest.version, 'low');
     }
 
-    // Historical search.
+    // Historical search. Up-front optional-dependency gate: if the engine's
+    // historical path needs a package that isn't installed (selenium-webdriver
+    // for Firefox, @puppeteer/browsers for Chromium), skip the engine with a
+    // clear message instead of producing a stream of cryptic per-version errors.
+    const deps = checkEngineDeps(engine, cfg);
+    if (!deps.ok) {
+      log(deps.message);
+      return {
+        engine,
+        versionType,
+        tested: [],
+        latestTested: null,
+        oldestVerifiedPassing: null,
+        firstVerifiedFailing: null,
+        boundaryConfidence: 'unknown',
+        inconclusive: [],
+        skipped: [],
+        resultLine: 'SKIPPED — required package not installed',
+        failureReason: null,
+        limitationNote: deps.message,
+      };
+    }
+
     const floor = cfg.floor[engine] ?? 60;
     const versions = versionRange(latestMajor, floor);
     const strategy =
@@ -179,7 +203,21 @@ export class BrowserCompatibilityScanner {
     log: (m: string) => void,
   ): Promise<CheckResult> {
     log(`  [${engine} v${version}] ${page.label} …`);
-    const binary = await this.provider.install(engine, version, this.config.cacheDir);
+
+    // Honesty contract: if a real historical binary for THIS version cannot be
+    // obtained, record INCONCLUSIVE for it. NEVER substitute another version —
+    // a verdict from e.g. Firefox 153 attributed to Firefox 52 is a lie.
+    let binary;
+    try {
+      binary = await this.provider.install(engine, version, this.config.cacheDir);
+    } catch (err) {
+      if (err instanceof HistoricalUnavailableError) {
+        log(`    → INCONCLUSIVE (historical binary unavailable: ${trunc(err.message, 400)})`);
+        return synthesizeInconclusive(engine, version, versionType, page, err.message);
+      }
+      throw err;
+    }
+
     const r = await runCheckWithRetry({
       engine,
       version,
@@ -238,6 +276,43 @@ function resultLineFor(oldest: string | null, firstFail: string | null): string 
   if (oldest) return `verified PASS >= ${oldest} (no failure found in searched range)`;
   if (firstFail) return `verified FAIL at ${firstFail} (no pass found in searched range)`;
   return 'INCONCLUSIVE — no verified pass or fail';
+}
+
+/**
+ * Build an INCONCLUSIVE CheckResult for a version whose real historical binary
+ * could not be obtained. No browser is launched; no verdict is invented. This is
+ * the credibility-preserving path for historical probes that can't be fulfilled.
+ */
+function synthesizeInconclusive(
+  engine: EngineName,
+  version: string,
+  versionType: 'real-major' | 'playwright-revision',
+  page: ResolvedPage,
+  reason: string,
+): CheckResult {
+  return {
+    engine,
+    version,
+    versionType,
+    buildLabel: '(unavailable)',
+    executablePath: '',
+    url: page.url,
+    verdict: 'inconclusive',
+    reason,
+    signals: {
+      navigationError: null,
+      jsErrors: [],
+      consoleErrors: [],
+      failedRequests: [],
+      rendered: false,
+      renderedSelectors: [],
+      readyMs: 0,
+    },
+    artifacts: { screenshotPath: null, tracePath: null },
+    finding: null,
+    limitationNote: reason,
+    durationMs: 0,
+  };
 }
 
 function artifactDirFor(outputDir: string): string {

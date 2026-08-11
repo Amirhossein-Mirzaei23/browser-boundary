@@ -1,5 +1,6 @@
 import { createWriteStream, existsSync, mkdirSync } from 'node:fs';
 import { readFile, writeFile, rm } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 /** Shared helpers for browser providers (no engine-specific knowledge here). */
@@ -74,6 +75,66 @@ export async function readBrowserVersion(
 export function extractMajor(version: string): string | null {
   const m = version.match(/(\d+)\./);
   return m ? m[1] : null;
+}
+
+/**
+ * Extract a `.tar.bz2` (historical Firefox Linux archive from archive.mozilla.org)
+ * into a target directory using the system `tar`. Throws on non-zero exit so the
+ * caller can mark the probe inconclusive rather than silently producing nothing.
+ */
+export function extractTarBz2(archive: string, dest: string): void {
+  ensureDir(dest);
+  const r = spawnSync('tar', ['-xjf', archive, '-C', dest], { stdio: 'pipe' });
+  if (r.status !== 0) {
+    throw new Error(
+      `tar extraction failed (status ${r.status}): ${archive}. ` +
+        `${r.stderr?.toString().trim() || 'no stderr'}`,
+    );
+  }
+}
+
+/**
+ * Extract a `.zip` (geckodriver release asset) into a target directory using the
+ * system `unzip`. Throws on non-zero exit. On Linux/CI this is the standard path;
+ * geckodriver macOS assets are .tar.gz — see extractTarGz.
+ */
+export function extractZip(archive: string, dest: string): void {
+  ensureDir(dest);
+  const r = spawnSync('unzip', ['-o', '-q', archive, '-d', dest], { stdio: 'pipe' });
+  if (r.status !== 0) {
+    throw new Error(
+      `unzip failed (status ${r.status}): ${archive}. ` +
+        `${r.stderr?.toString().trim() || 'no stderr'}`,
+    );
+  }
+}
+
+/** Extract a `.tar.gz` (geckodriver macOS asset, or other gzipped tarballs). */
+export function extractTarGz(archive: string, dest: string): void {
+  ensureDir(dest);
+  const r = spawnSync('tar', ['-xzf', archive, '-C', dest], { stdio: 'pipe' });
+  if (r.status !== 0) {
+    throw new Error(
+      `tar extraction failed (status ${r.status}): ${archive}. ` +
+        `${r.stderr?.toString().trim() || 'no stderr'}`,
+    );
+  }
+}
+
+/**
+ * Extract a `.tar.xz` (newer Firefox Linux archives from archive.mozilla.org —
+ * Mozilla switched from .tar.bz2 to .tar.xz at a certain release). Uses the
+ * system `tar` with -J (xz). Throws on non-zero exit.
+ */
+export function extractTarXz(archive: string, dest: string): void {
+  ensureDir(dest);
+  const r = spawnSync('tar', ['-xJf', archive, '-C', dest], { stdio: 'pipe' });
+  if (r.status !== 0) {
+    throw new Error(
+      `tar extraction failed (status ${r.status}): ${archive}. ` +
+        `${r.stderr?.toString().trim() || 'no stderr'}`,
+    );
+  }
 }
 
 export { path };

@@ -9,9 +9,9 @@ import { WebKitProvider } from './webkit-provider.js';
 /**
  * Composite provider that routes each engine to the most capable provider that
  * can serve it:
- *   chromium → ChromiumProvider (real historical via Chrome-for-Testing)
- *   firefox  → FirefoxProvider  (real historical via archive.mozilla.org)
- *   webkit   → WebKitProvider   (Playwright-revision-only, honestly)
+ *   chromium → ChromiumProvider (real historical via Chrome-for-Testing, driven by Playwright/CDP)
+ *   firefox  → FirefoxProvider  (real historical via archive.mozilla.org, driven by geckodriver/WebDriver)
+ *   webkit   → WebKitProvider   (Playwright-revision-only, honestly — Safari is macOS-locked)
  *
  * The scanner only ever talks to this composite; it is provider-agnostic.
  */

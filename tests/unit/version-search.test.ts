@@ -112,3 +112,44 @@ test('all-pass range still correctly reports floor as oldest pass', async () => 
   assert.equal(out.oldestVerifiedPassing, '110');
   assert.equal(out.firstVerifiedFailing, null);
 });
+
+test('REGRESSION: step-down bails after a streak of unavailable versions (no wall of probes)', async () => {
+  // Real-world scenario from the CFT scan: newest versions pass, then older
+  // versions are all unavailable (403 → inconclusive). The step phase must NOT
+  // probe every remaining step point — it bails after a short unavailable streak.
+  const tested: string[] = [];
+  const truth = async (v: string): Promise<Verdict> => {
+    tested.push(v);
+    return Number(v) >= 121 ? 'pass' : 'inconclusive';
+  };
+  await searchBoundary({
+    versions: versionRange(151, 60), // 92 versions
+    test: truth,
+    strategy: 'binary',
+    stepSize: 10,
+  });
+  // Step probes: 151(pass), 141(pass), 131(pass), 121(pass), 111(inc),
+  // 101(inc) → streak hits the threshold and we STOP. We must NOT reach 91/81/71/61.
+  for (const old of ['91', '81', '71', '61']) {
+    assert.ok(!tested.includes(old), `should not probe v${old} after unavailable streak (probed: ${tested.join(',')})`);
+  }
+});
+
+test('REGRESSION: unavailable older range reports oldest VERIFIED pass, not the untested floor', async () => {
+  // Same scenario: 151/141/131/121 pass, then everything older is unavailable.
+  // The summary MUST cite v121 (oldest verified pass), NOT v60 (the floor,
+  // which was never tested). Confidence is low.
+  const truth = async (v: string): Promise<Verdict> =>
+    Number(v) >= 121 ? 'pass' : 'inconclusive';
+  const out = await searchBoundary({
+    versions: versionRange(151, 60),
+    test: truth,
+    strategy: 'binary',
+    stepSize: 10,
+  });
+  assert.equal(out.oldestVerifiedPassing, '121', 'must report the oldest VERIFIED pass');
+  assert.notEqual(out.oldestVerifiedPassing, '60', 'must NOT claim the untested floor passed');
+  assert.equal(out.firstVerifiedFailing, null);
+  assert.equal(out.boundaryConfidence, 'low');
+  assert.ok(out.inconclusive.length > 0, 'the unavailable versions are recorded as inconclusive');
+});
