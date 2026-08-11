@@ -30,7 +30,7 @@ Normal Playwright tests check that *your current browser* behaves correctly. Thi
 ## Installation
 
 ```bash
-npm install -D @amirhossein-mirzaei23/browser-boundary
+npm install -D browser-boundary
 ```
 
 Playwright is a **peer dependency** — install browsers once:
@@ -66,7 +66,7 @@ Environment variables (`MRZ_*`, with legacy `BC_*` aliases) are also supported; 
 ## Library usage
 
 ```ts
-import { scan } from '@amirhossein-mirzaei23/browser-boundary';
+import { scan } from 'browser-boundary';
 
 const result = await scan({
   urls: ['https://example.com', 'https://example.com/about'],
