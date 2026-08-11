@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-08-11
+
+### Added
+- **Download progress bar** — when a Chromium historical binary needs to be
+  fetched (cache miss), the CLI now draws a live in-place progress bar with
+  percentage and byte count (e.g. `71.0 MB/150.5 MB`) on the line beneath the
+  `[chromium vNNN] home …` label.
+- **Status text for missing versions** — when a curated snapshot revision has
+  been pruned from the bucket, the scan now prints
+  `Chromium NNN (rXXXXXX) is no longer on the bucket — finding a nearby revision…`
+  followed by `Downloading Chromium NNN (rXXXXXX)…` and `Extracting…` phase
+  indicators, instead of silently hanging.
+- TTY-aware rendering: an interactive terminal redraws the bar in place with
+  `\r`; when piped to a file/log, each phase prints once as a plain line (no
+  control-character garbage).
+- Pluggable `FetchProgressEvent` pipeline (`status`/`bytes`/`done`) threaded
+  from `downloadFile` → provider → scanner → CLI renderer, so progress is pure
+  data until the terminal layer.
+
+## [1.3.0] - 2026-08-10
+
+### Fixed
+- **Chromium snapshot 404 errors** — the vendored `MILESTONE_REVISIONS` table
+  held commit-position revisions that Google continuously prunes from the
+  `chromium-browser-snapshots` bucket. 40 of 52 curated revisions returned 404
+  (e.g. Chrome 111 → r1014680, Chrome 101 → r908261), surfacing as
+  `INCONCLUSIVE (historical binary unavailable: … server returned code 404)`.
+  The provider now detects a pruned revision and falls back to the nearest
+  still-available revision in the same milestone window.
+- Eliminated the leaked `@puppeteer/browsers` `"All providers failed… 404"`
+  raw error; failures now report a clear, honest message.
+
+### Added
+- Outward HEAD-probing fallback (`findNearestAvailableSnapshotRevision`):
+  steps `±1, ±2, … ±100` from the curated revision, returning the closest one
+  whose `chrome-linux.zip` still exists. Stays within the same Chrome milestone
+  (~6-week release window) — never a cross-version substitution.
+- Tri-state revision probe (`probeSnapshotRevision`): distinguishes `ok` /
+  `pruned` (404 → try nearby) / `unreachable` (401/403 geo-block or network →
+  short-circuit to INCONCLUSIVE without probing 100 unreachable revisions).
+- Direct `chrome-linux.zip` download + extraction in `downloadChromiumSnapshot`
+  (bypasses `@puppeteer/browsers` so the exact fallback revision is controlled).
+- The build label honestly reports a fallback revision, e.g.
+  `Chromium 111 (snapshot r1014682, nearest to curated r1014680)`.
+
+## [1.2.1] - 2026-08-09
+
+### Changed
+- Package renamed to `browser-boundary` (from `mrz-browser-compat`) and
+  published under the `@amirhossein-mirzaei23` scope.
+
 ## [1.2.0] - 2026-08-08
 
 ### Added
