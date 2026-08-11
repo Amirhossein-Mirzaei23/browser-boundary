@@ -4,6 +4,7 @@ import { scan } from '../core/scanner.js';
 import { writeJson, writeMarkdown, type ScanResult } from '../reporting/index.js';
 import { ConfigError } from '../config/resolve.js';
 import type { ScanConfig } from '../config/schema.js';
+import { FetchProgressRenderer } from './progress.js';
 
 /**
  * CLI entrypoint. Thin layer over the public scan() API. Exit codes:
@@ -62,8 +63,10 @@ async function main(): Promise<number> {
 
   let result: ScanResult;
   try {
+    const renderer = new FetchProgressRenderer();
     result = await scan(scanConfig, {
       onProgress: (m) => console.log(m),
+      onFetchProgress: (e) => renderer.handle(e),
     });
   } catch (err) {
     if (err instanceof ConfigError) {

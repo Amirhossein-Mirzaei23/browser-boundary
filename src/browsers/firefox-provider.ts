@@ -4,6 +4,7 @@ import type { EngineName } from '../reporting/types.js';
 import type { BrowserBinary, BrowserVersion } from './types.js';
 import { HistoricalUnavailableError } from './types.js';
 import { PlaywrightProvider } from './playwright-provider.js';
+import type { FetchProgressHandler } from './progress.js';
 import {
   cleanDir,
   downloadFile,
@@ -48,7 +49,12 @@ export class FirefoxProvider {
     return this.playwright.getLatest(engine);
   }
 
-  async install(engine: EngineName, version: string, cacheDir: string): Promise<BrowserBinary> {
+  async install(
+    engine: EngineName,
+    version: string,
+    cacheDir: string,
+    _onProgress?: FetchProgressHandler,
+  ): Promise<BrowserBinary> {
     if (engine !== 'firefox') {
       return this.playwright.install(engine, version, cacheDir);
     }

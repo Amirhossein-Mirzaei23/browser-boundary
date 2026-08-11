@@ -1,4 +1,5 @@
 import type { EngineName, VersionType } from '../reporting/types.js';
+import type { FetchProgressHandler } from './progress.js';
 
 /**
  * Browser provider abstraction.
@@ -42,8 +43,17 @@ export interface BrowserVersion {
 }
 
 export interface BrowserProvider {
-  /** Resolve a binary for a specific (engine, version). */
-  install(engine: EngineName, version: string, cacheDir: string): Promise<BrowserBinary>;
+  /**
+   * Resolve a binary for a specific (engine, version). `onProgress` (optional)
+   * receives acquisition progress events (status changes, byte counts) — used by
+   * the CLI to draw a progress bar during multi-hundred-MB Chromium downloads.
+   */
+  install(
+    engine: EngineName,
+    version: string,
+    cacheDir: string,
+    onProgress?: FetchProgressHandler,
+  ): Promise<BrowserBinary>;
   /** Resolve the current latest build for an engine. */
   getLatest(engine: EngineName): Promise<BrowserVersion>;
   /** Whether this provider can obtain real historical versions for the engine. */

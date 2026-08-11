@@ -1,6 +1,7 @@
 import { chromium, firefox, webkit, type BrowserType } from 'playwright';
 import type { EngineName } from '../reporting/types.js';
 import type { BrowserBinary, BrowserProvider, BrowserVersion } from './types.js';
+import type { FetchProgressHandler } from './progress.js';
 import { extractMajor, readBrowserVersion } from './util.js';
 
 /**
@@ -44,6 +45,7 @@ export class PlaywrightProvider {
     engine: EngineName,
     version: string,
     _cacheDir: string,
+    _onProgress?: FetchProgressHandler,
   ): Promise<BrowserBinary> {
     // Playwright only has the current build; "install" == resolve latest and
     // compare versions. Used as a fallback when no historical provider applies.

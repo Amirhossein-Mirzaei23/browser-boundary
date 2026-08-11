@@ -1,6 +1,7 @@
 import type { EngineName } from '../reporting/types.js';
 import type { BrowserBinary, BrowserVersion } from './types.js';
 import { PlaywrightProvider } from './playwright-provider.js';
+import type { FetchProgressHandler } from './progress.js';
 
 /**
  * WebKit provider — HONEST about its limitation.
@@ -19,7 +20,12 @@ export class WebKitProvider {
     return this.playwright.getLatest(engine);
   }
 
-  async install(engine: EngineName, version: string, cacheDir: string): Promise<BrowserBinary> {
+  async install(
+    engine: EngineName,
+    version: string,
+    cacheDir: string,
+    _onProgress?: FetchProgressHandler,
+  ): Promise<BrowserBinary> {
     const latest = await this.getLatest(engine);
     return {
       executablePath: latest.executablePath,

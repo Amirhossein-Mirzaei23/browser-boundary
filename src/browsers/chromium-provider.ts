@@ -5,6 +5,7 @@ import type { BrowserBinary, BrowserVersion } from './types.js';
 import { HistoricalUnavailableError } from './types.js';
 import { PlaywrightProvider } from './playwright-provider.js';
 import { cleanDir, downloadFile, ensureDir, extractZip, readManifest, writeManifest } from './util.js';
+import type { FetchProgressHandler } from './progress.js';
 import {
   snapshotRevisionFor,
   probeSnapshotRevision,
@@ -48,7 +49,12 @@ export class ChromiumProvider {
     return this.playwright.getLatest(engine);
   }
 
-  async install(engine: EngineName, version: string, cacheDir: string): Promise<BrowserBinary> {
+  async install(
+    engine: EngineName,
+    version: string,
+    cacheDir: string,
+    onProgress?: FetchProgressHandler,
+  ): Promise<BrowserBinary> {
     if (engine !== 'chromium') {
       return this.playwright.install(engine, version, cacheDir);
     }
@@ -69,8 +75,8 @@ export class ChromiumProvider {
     try {
       const historical =
         requestedMajor >= SNAPSHOT_MILESTONE_MAX + 1
-          ? await this.downloadChromiumForTesting(requestedMajor, cacheDir)
-          : await this.downloadChromiumSnapshot(requestedMajor, cacheDir);
+          ? await this.downloadChromiumForTesting(requestedMajor, cacheDir, onProgress)
+          : await this.downloadChromiumSnapshot(requestedMajor, cacheDir, onProgress);
       return {
         executablePath: historical.executablePath,
         buildLabel: historical.buildLabel,
@@ -99,6 +105,7 @@ export class ChromiumProvider {
   private async downloadChromiumForTesting(
     major: number,
     cacheDir: string,
+    onProgress?: FetchProgressHandler,
   ): Promise<{ executablePath: string; buildLabel: string }> {
     const { install, computeExecutablePath, Browser, resolveBuildId, detectBrowserPlatform } =
       await import('@puppeteer/browsers');
@@ -131,6 +138,10 @@ export class ChromiumProvider {
     if (cached) return cached;
 
     if (!existsSync(fullExe)) {
+      // @puppeteer/browsers install() exposes no chunk-level progress callback,
+      // so we emit an indeterminate status and let it run. The renderer shows a
+      // pulse/spinner rather than a percentage bar for this phase.
+      onProgress?.({ type: 'status', label: `Downloading Chrome for Testing ${buildId}…`, indeterminate: true });
       await install({ browser: Browser.CHROME, buildId, cacheDir: cache, platform });
     }
 
@@ -164,6 +175,7 @@ export class ChromiumProvider {
   private async downloadChromiumSnapshot(
     major: number,
     cacheDir: string,
+    onProgress?: FetchProgressHandler,
   ): Promise<{ executablePath: string; buildLabel: string }> {
     const curated = snapshotRevisionFor(major);
     if (!curated) {
@@ -188,7 +200,13 @@ export class ChromiumProvider {
           'download-failed',
         );
       }
-      // 'pruned' (404) — a nearby revision may still exist; fall back.
+      // 'pruned' (404) — the exact curated revision is gone. Surface that to
+      // the user, then search for a nearby one that still exists.
+      onProgress?.({
+        type: 'status',
+        label: `Chromium ${major} (r${curated}) is no longer on the bucket — finding a nearby revision…`,
+        indeterminate: true,
+      });
       const nearby = await findNearestAvailableSnapshotRevision(curated);
       if (!nearby) {
         throw new HistoricalUnavailableError(
@@ -216,7 +234,14 @@ export class ChromiumProvider {
         `${SNAPSHOT_LINUX_FOLDER}/${revision}/chrome-linux.zip`;
       const archive = path.join(cache, `chrome-linux-${revision}.zip`);
       try {
-        if (!existsSync(archive)) await downloadFile(zipUrl, archive);
+        if (!existsSync(archive)) {
+          onProgress?.({
+            type: 'status',
+            label: `Downloading Chromium ${major} (r${revision})…`,
+          });
+          await downloadFile(zipUrl, archive, onProgress);
+        }
+        onProgress?.({ type: 'status', label: `Extracting Chromium ${major}…`, indeterminate: true });
         await cleanDir(extractDir);
         extractZip(archive, extractDir);
       } catch (err) {
