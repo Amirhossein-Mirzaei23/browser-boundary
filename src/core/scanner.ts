@@ -15,6 +15,7 @@ import {
 } from '../config/resolve.js';
 import { defaultBrowserProvider, type BrowserProvider } from '../browsers/provider.js';
 import { HistoricalUnavailableError } from '../browsers/types.js';
+import type { FetchProgressHandler } from '../browsers/progress.js';
 import { checkEngineDeps } from './dependencies.js';
 import { runCheckWithRetry } from './compatibility-checker.js';
 import { searchBoundary, versionRange } from './version-search.js';
@@ -28,6 +29,8 @@ import { aggregateFeatureFindings } from '../analysis/error-analyzer.js';
  */
 export interface ScanProgress {
   onProgress?: (msg: string) => void;
+  /** Receives acquisition-progress events (status/bytes/done) for a version's binary fetch. */
+  onFetchProgress?: FetchProgressHandler;
 }
 
 export class BrowserCompatibilityScanner {
@@ -46,6 +49,7 @@ export class BrowserCompatibilityScanner {
 
   async scan(progress?: ScanProgress): Promise<ScanResult> {
     const log = progress?.onProgress ?? (() => {});
+    const onFetchProgress = progress?.onFetchProgress;
     const cfg = this.config;
     const startedAt = new Date().toISOString();
     const results: CheckResult[] = [];
@@ -54,7 +58,7 @@ export class BrowserCompatibilityScanner {
     for (const engine of cfg.engines) {
       log(`\n=== ${engine.toUpperCase()} ===`);
       try {
-        const summary = await this.scanEngine(engine, results, log);
+        const summary = await this.scanEngine(engine, results, log, onFetchProgress);
         summaries.push(summary);
       } catch (err) {
         log(`Engine ${engine} failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -99,6 +103,7 @@ export class BrowserCompatibilityScanner {
     engine: EngineName,
     results: CheckResult[],
     log: (m: string) => void,
+    onFetchProgress?: FetchProgressHandler,
   ): Promise<EngineSummary> {
     const cfg = this.config;
     const pages = cfg.pages.map((p) => resolvePageReadiness(p, cfg));
@@ -115,7 +120,7 @@ export class BrowserCompatibilityScanner {
       log(`${cap(engine)}: current build only; probing latest.`);
       const tested: string[] = [];
       for (const page of pages) {
-        const r = await this.probe(engine, latest.version, versionType, page, log);
+        const r = await this.probe(engine, latest.version, versionType, page, log, onFetchProgress);
         results.push(r);
         tested.push(latest.version);
       }
@@ -163,7 +168,7 @@ export class BrowserCompatibilityScanner {
     const test = async (version: string): Promise<Verdict> => {
       let agg: Verdict = 'pass';
       for (const page of pages) {
-        const r = await this.probe(engine, version, versionType, page, log);
+        const r = await this.probe(engine, version, versionType, page, log, onFetchProgress);
         results.push(r);
         if (r.verdict === 'error') agg = 'error';
         else if (r.verdict === 'inconclusive') agg = agg === 'fail' ? 'fail' : 'inconclusive';
@@ -201,6 +206,7 @@ export class BrowserCompatibilityScanner {
     versionType: 'real-major' | 'playwright-revision',
     page: ResolvedPage,
     log: (m: string) => void,
+    onFetchProgress?: FetchProgressHandler,
   ): Promise<CheckResult> {
     log(`  [${engine} v${version}] ${page.label} …`);
 
@@ -209,14 +215,18 @@ export class BrowserCompatibilityScanner {
     // a verdict from e.g. Firefox 153 attributed to Firefox 52 is a lie.
     let binary;
     try {
-      binary = await this.provider.install(engine, version, this.config.cacheDir);
+      binary = await this.provider.install(engine, version, this.config.cacheDir, onFetchProgress);
     } catch (err) {
+      // Tell the renderer to clear its in-place bar whether we got the binary
+      // or not, so the INCONCLUSIVE line lands on a fresh line.
+      onFetchProgress?.({ type: 'done', ok: false });
       if (err instanceof HistoricalUnavailableError) {
         log(`    → INCONCLUSIVE (historical binary unavailable: ${trunc(err.message, 400)})`);
         return synthesizeInconclusive(engine, version, versionType, page, err.message);
       }
       throw err;
     }
+    onFetchProgress?.({ type: 'done', ok: true });
 
     const r = await runCheckWithRetry({
       engine,

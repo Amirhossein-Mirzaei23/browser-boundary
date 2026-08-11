@@ -1,6 +1,7 @@
 import type { EngineName } from '../reporting/types.js';
 import type { BrowserBinary, BrowserVersion } from './types.js';
 import type { BrowserProvider } from './types.js';
+import type { FetchProgressHandler } from './progress.js';
 import { ChromiumProvider } from './chromium-provider.js';
 import { FirefoxProvider } from './firefox-provider.js';
 import { PlaywrightProvider } from './playwright-provider.js';
@@ -32,8 +33,13 @@ export class DefaultBrowserProvider implements BrowserProvider {
     }
   }
 
-  async install(engine: EngineName, version: string, cacheDir: string): Promise<BrowserBinary> {
-    return this.for(engine).install(engine, version, cacheDir);
+  async install(
+    engine: EngineName,
+    version: string,
+    cacheDir: string,
+    onProgress?: FetchProgressHandler,
+  ): Promise<BrowserBinary> {
+    return this.for(engine).install(engine, version, cacheDir, onProgress);
   }
 
   async getLatest(engine: EngineName): Promise<BrowserVersion> {
