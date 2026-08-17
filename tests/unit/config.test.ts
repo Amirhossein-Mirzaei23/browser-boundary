@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveConfig, resolvePageReadiness, ConfigError, toRegExp } from '../../src/config/resolve.js';
+import {
+  resolveConfig,
+  resolvePageReadiness,
+  validateExplicitVersionsAgainstLatest,
+  ConfigError,
+  toRegExp,
+} from '../../src/config/resolve.js';
 
 test('resolveConfig applies defaults', () => {
   const cfg = resolveConfig({ urls: ['https://example.com'] });
@@ -103,4 +109,41 @@ test('headed defaults to true (windows shown)', () => {
 test('headed can be turned off (headless)', () => {
   const cfg = resolveConfig({ urls: ['https://x.com'], headed: false });
   assert.equal(cfg.headed, false);
+});
+
+test('explicit versions cannot exceed the current engine major', () => {
+  assert.throws(
+    () => validateExplicitVersionsAgainstLatest('chromium', ['120', '125'], 124),
+    (err: unknown) =>
+      err instanceof ConfigError &&
+      /Chromium versions must be in the supported range 60–124/.test(err.message) &&
+      /125/.test(err.message),
+  );
+});
+
+test('explicit versions at the engine boundaries are valid', () => {
+  assert.doesNotThrow(() => validateExplicitVersionsAgainstLatest('chromium', ['60', '124'], 124));
+  assert.doesNotThrow(() => validateExplicitVersionsAgainstLatest('firefox', ['52', '125'], 125));
+});
+
+test('resolveConfig validates explicit API configuration', () => {
+  assert.throws(
+    () => resolveConfig({
+      urls: ['https://x.com'],
+      engines: ['chromium', 'firefox'],
+      search: { strategy: 'explicit', explicitVersions: { chromium: ['120'] } },
+    }),
+    (err: unknown) => err instanceof ConfigError && /exactly one engine/.test(err.message),
+  );
+});
+
+test('explicit version testing rejects multiple pages so closing advances to the next version', () => {
+  assert.throws(
+    () => resolveConfig({
+      urls: ['https://x.com', 'https://x.com/dashboard'],
+      engines: ['chromium'],
+      search: { strategy: 'explicit', explicitVersions: { chromium: ['120', '115'] } },
+    }),
+    (err: unknown) => err instanceof ConfigError && /exactly one URL/.test(err.message),
+  );
 });

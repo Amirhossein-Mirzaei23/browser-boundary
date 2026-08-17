@@ -249,6 +249,25 @@ class WebDriverSession implements ControllerSession {
     killProc(this.geckodriver);
   }
 
+  async waitForUserCloseAndClose(): Promise<void> {
+    // WebDriver has no reliable close event, so poll until the user closes the
+    // Firefox window and the session rejects a lightweight command.
+    while (true) {
+      try {
+        await this.driver.getWindowHandle();
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      } catch {
+        break;
+      }
+    }
+    try {
+      await this.driver.quit();
+    } catch {
+      /* the user already closed the session */
+    }
+    killProc(this.geckodriver);
+  }
+
   /** Pull browser logs and forward JS errors / console messages to the sinks. */
   private async drainLogs(): Promise<void> {
     const sinks = this._sinks;
@@ -278,12 +297,12 @@ class WebDriverSession implements ControllerSession {
 }
 
 function killProc(p: ChildProcess): void {
-  if (!p.killed) {
+  if (p.exitCode === null && p.signalCode === null) {
     try {
       p.kill('SIGTERM');
       setTimeout(() => {
         try {
-          if (!p.killed) p.kill('SIGKILL');
+          if (p.exitCode === null && p.signalCode === null) p.kill('SIGKILL');
         } catch {
           /* gone */
         }

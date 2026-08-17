@@ -38,6 +38,7 @@ declare module 'selenium-webdriver' {
   }
   export interface WebDriverLike {
     get(url: string): Promise<void>;
+    getWindowHandle(): Promise<string>;
     quit(): Promise<void>;
     executeScript<T>(script: string, ...args: unknown[]): Promise<T>;
     findElements(locator: { using: string; value: string }): Promise<WebDriverElement[]>;

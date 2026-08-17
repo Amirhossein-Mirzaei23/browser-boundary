@@ -64,6 +64,40 @@ test('explicit strategy tests every listed version', async () => {
   assert.deepEqual(tested, ['120', '115', '100']);
 });
 
+test('explicit strategy preserves the user-supplied version order', async () => {
+  const tested: string[] = [];
+  await searchBoundary({
+    versions: ['100', '120', '110'],
+    test: async (version) => { tested.push(version); return 'pass' as Verdict; },
+    strategy: 'explicit',
+  });
+  assert.deepEqual(tested, ['100', '120', '110']);
+});
+
+test('explicit strategy never starts the next version before the current one finishes', async () => {
+  const events: string[] = [];
+  let releaseCurrent = () => {};
+  const currentClosed = new Promise<void>((resolve) => { releaseCurrent = resolve; });
+
+  const scan = searchBoundary({
+    versions: ['120', '115'],
+    strategy: 'explicit',
+    test: async (version) => {
+      events.push(`open:${version}`);
+      if (version === '120') await currentClosed;
+      events.push(`close:${version}`);
+      return 'pass' as Verdict;
+    },
+  });
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(events, ['open:120'], 'v115 must not open while v120 is still open');
+
+  releaseCurrent();
+  await scan;
+  assert.deepEqual(events, ['open:120', 'close:120', 'open:115', 'close:115']);
+});
+
 test('inconclusive versions are recorded, never crash the search', async () => {
   const out = await searchBoundary({
     versions: versionRange(120, 110),

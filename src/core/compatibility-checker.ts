@@ -63,6 +63,7 @@ export async function runCheck(input: CheckInput): Promise<CheckResult> {
 
   const controller = await controllerFor(binary);
   let session: Awaited<ReturnType<typeof controller.launch>> | null = null;
+  let finalizationStarted = false;
 
   try {
     session = await controller.launch(binary, config);
@@ -148,16 +149,20 @@ export async function runCheck(input: CheckInput): Promise<CheckResult> {
       await session.discardTrace();
     }
 
-    await session.holdOpenAndClose(config.holdOpenSec);
+    finalizationStarted = true;
+    await finalizeSession(session, config);
     session = null;
   } catch (err) {
     verdict = 'error';
     reason = `Infrastructure error: ${err instanceof Error ? err.message : String(err)}`;
   } finally {
-    // Guarantee teardown if holdOpenAndClose was bypassed by a throw.
+    // If the check failed after launch, explicit headed mode must still wait for
+    // the user to close the browser. Only a failure inside finalization itself
+    // falls back to immediate best-effort teardown.
     if (session) {
       try {
-        await session.holdOpenAndClose(0);
+        if (finalizationStarted) await session.holdOpenAndClose(0);
+        else await finalizeSession(session, config);
       } catch {
         /* best effort */
       }
@@ -196,6 +201,18 @@ export async function runCheckWithRetry(input: CheckInput): Promise<CheckResult>
     input.config.retries,
     (r) => (r.verdict === 'inconclusive' || r.verdict === 'error') && isTransientReason(r.reason),
   );
+}
+
+/** Explicit headed probes are user-controlled: the next version starts only after close. */
+export async function finalizeSession(
+  session: import('../controllers/types.js').ControllerSession,
+  config: ResolvedConfig,
+): Promise<void> {
+  if (config.strategy === 'explicit' && config.headed) {
+    await session.waitForUserCloseAndClose();
+    return;
+  }
+  await session.holdOpenAndClose(config.holdOpenSec);
 }
 
 function ensureArtifactDirs(artifactsDir: string): {

@@ -8,8 +8,10 @@ import type {
 } from '../reporting/types.js';
 import type { ScanConfig } from '../config/schema.js';
 import {
+  ConfigError,
   resolveConfig,
   resolvePageReadiness,
+  validateExplicitVersionsAgainstLatest,
   type ResolvedConfig,
   type ResolvedPage,
 } from '../config/resolve.js';
@@ -61,6 +63,7 @@ export class BrowserCompatibilityScanner {
         const summary = await this.scanEngine(engine, results, log, onFetchProgress);
         summaries.push(summary);
       } catch (err) {
+        if (err instanceof ConfigError) throw err;
         log(`Engine ${engine} failed: ${err instanceof Error ? err.message : String(err)}`);
         summaries.push({
           engine,
@@ -112,6 +115,18 @@ export class BrowserCompatibilityScanner {
     const latestMajor = Number(latest.version);
     const versionType = latest.versionType;
 
+    const requestedVersions = cfg.explicitVersions[engine];
+    if (cfg.strategy === 'explicit' && requestedVersions) {
+      validateExplicitVersionsAgainstLatest(engine, requestedVersions, latestMajor);
+      log(
+        `${cap(engine)}: testing requested major version${requestedVersions.length === 1 ? '' : 's'} ` +
+        `${requestedVersions.join(', ')} (valid range: ${engine === 'chromium' ? 60 : 52}–${latestMajor}).`,
+      );
+      if (cfg.headed) {
+        log('Close the browser tab/window when finished; the next requested version will then open.');
+      }
+    }
+
     // Engines that can't provide historical binaries (WebKit: no drivable
     // historical Safari off macOS) are probed latest-only. Chromium and Firefox
     // both support real historical binaries. Same for the explicit 'latest' strategy.
@@ -162,7 +177,7 @@ export class BrowserCompatibilityScanner {
     const explicitVersions = cfg.explicitVersions[engine];
     const searchVersions =
       strategy === 'explicit' && explicitVersions
-        ? [...explicitVersions].sort((a, b) => Number(b) - Number(a))
+        ? [...explicitVersions]
         : versions;
 
     const test = async (version: string): Promise<Verdict> => {

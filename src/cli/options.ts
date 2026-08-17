@@ -9,9 +9,7 @@ import { ConfigError } from '../config/resolve.js';
  * scanning logic). Flags take precedence over env vars over defaults.
  */
 
-const { values, positionals } = parseArgs({
-  allowPositionals: true,
-  options: {
+const CLI_OPTIONS = {
     help: { type: 'boolean', short: 'h', default: false },
     version: { type: 'boolean', short: 'v', default: false },
     headless: { type: 'boolean', default: false },
@@ -32,8 +30,9 @@ const { values, positionals } = parseArgs({
     'readiness-selector': { type: 'string', multiple: true },
     'readiness-mode': { type: 'string' },
     'min-confidence': { type: 'string' },
-  },
-});
+    versions: { type: 'string' },
+    'exact-version': { type: 'string' },
+} as const;
 
 export interface ParsedCli {
   command: 'scan' | 'install' | 'help' | 'version';
@@ -41,7 +40,11 @@ export interface ParsedCli {
   config: Partial<ScanConfig>;
 }
 
-export function parseCli(): ParsedCli {
+export function parseCli(
+  args: string[] = process.argv.slice(2),
+  env: NodeJS.ProcessEnv = process.env,
+): ParsedCli {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: CLI_OPTIONS });
   if (values.version || positionals[0] === 'version') {
     return { command: 'version', url: null, config: {} };
   }
@@ -70,18 +73,23 @@ export function parseCli(): ParsedCli {
     // deep-merge of file+flags in v1; flag/env wins.
   }
 
-  const envEngines = process.env.MRZ_ENGINES ?? process.env.BC_ENGINES;
+  const envEngines = env.MRZ_ENGINES ?? env.BC_ENGINES;
   const engines = (values.engines ?? envEngines)?.split(',').map((s) => s.trim().toLowerCase()) as
     | EngineName[]
     | undefined;
 
-  const strategy = (values.strategy ?? process.env.MRZ_STRATEGY) as SearchStrategy | undefined;
-  const latestOnly = values['latest-only'] || envBool('MRZ_LATEST_ONLY') || envBool('BC_LATEST_ONLY');
+  validateEngines(engines);
+  const strategy = (values.strategy ?? env.MRZ_STRATEGY) as SearchStrategy | undefined;
+  const latestOnly = values['latest-only'] || envBool(env, 'MRZ_LATEST_ONLY') || envBool(env, 'BC_LATEST_ONLY');
   // Headed (visible windows) is the DEFAULT. --headless opts into running
   // invisibly. The MRZ_HEADLESS / BC_HEADLESS env vars do the same.
-  const headless = values.headless || envBool('MRZ_HEADLESS') || envBool('BC_HEADLESS');
+  const headless = values.headless || envBool(env, 'MRZ_HEADLESS') || envBool(env, 'BC_HEADLESS');
+  const versionsValue = values.versions ?? values['exact-version'];
+  const explicitVersions = versionsValue
+    ? parseExplicitVersions(versionsValue, values.engines, engines, strategy, latestOnly)
+    : undefined;
 
-  const format = (values.format ?? process.env.MRZ_FORMAT)?.split(',').map((s) => s.trim()) as
+  const format = (values.format ?? env.MRZ_FORMAT)?.split(',').map((s) => s.trim()) as
     | ('json' | 'markdown')[]
     | undefined;
 
@@ -90,29 +98,30 @@ export function parseCli(): ParsedCli {
     urls,
     engines: engines?.length ? engines : undefined,
     search: {
-      strategy: latestOnly ? 'latest' : strategy,
-      stepSize: num(values['step-size'] ?? process.env.MRZ_STEP_SIZE ?? process.env.BC_STEP_SIZE),
+      strategy: explicitVersions ? 'explicit' : latestOnly ? 'latest' : strategy,
+      stepSize: num(values['step-size'] ?? env.MRZ_STEP_SIZE ?? env.BC_STEP_SIZE),
+      explicitVersions,
     },
-    timeout: num(values.timeout ?? process.env.MRZ_TIMEOUT_MS ?? process.env.BC_TIMEOUT_MS),
-    waitUntil: (values['wait-until'] ?? process.env.MRZ_WAIT_UNTIL) as
+    timeout: num(values.timeout ?? env.MRZ_TIMEOUT_MS ?? env.BC_TIMEOUT_MS),
+    waitUntil: (values['wait-until'] ?? env.MRZ_WAIT_UNTIL) as
       | 'domcontentloaded'
       | 'load'
       | undefined,
     // HTTP cache is DISABLED by default (correctness). `--http-cache` opts back in.
     disableHttpCache: values['http-cache']
       ? false
-      : envBool('MRZ_HTTP_CACHE')
+      : envBool(env, 'MRZ_HTTP_CACHE')
         ? false
         : undefined,
-    holdOpenSec: num(values['hold-open'] ?? process.env.MRZ_HOLD_OPEN),
+    holdOpenSec: num(values['hold-open'] ?? env.MRZ_HOLD_OPEN),
     // Headed is the default; --headless inverts it.
     headed: headless ? false : true,
     output: {
       format,
-      directory: values.output ?? process.env.MRZ_REPORTS_DIR ?? process.env.BC_REPORTS_DIR,
+      directory: values.output ?? env.MRZ_REPORTS_DIR ?? env.BC_REPORTS_DIR,
     },
     analysis: {
-      minConfidence: (values['min-confidence'] ?? process.env.MRZ_MIN_CONFIDENCE) as
+      minConfidence: (values['min-confidence'] ?? env.MRZ_MIN_CONFIDENCE) as
         | 'high'
         | 'medium'
         | 'low'
@@ -125,10 +134,51 @@ export function parseCli(): ParsedCli {
   return { command: 'scan', url, config: clean(config) as Partial<ScanConfig> };
 }
 
-function envBool(name: string): boolean {
-  const v = process.env[name];
+function envBool(env: NodeJS.ProcessEnv, name: string): boolean {
+  const v = env[name];
   if (v === undefined) return false;
   return v === '1' || v.toLowerCase() === 'true' || v.toLowerCase() === 'yes';
+}
+
+const VALID_ENGINES: EngineName[] = ['chromium', 'firefox', 'webkit'];
+
+function validateEngines(engines: EngineName[] | undefined): void {
+  const invalid = engines?.find((engine) => !VALID_ENGINES.includes(engine));
+  if (invalid) throw new ConfigError(`Unknown engine "${invalid}". Valid engines: chromium, firefox, webkit.`);
+}
+
+function parseExplicitVersions(
+  value: string,
+  enginesFlag: string | undefined,
+  engines: EngineName[] | undefined,
+  strategy: SearchStrategy | undefined,
+  latestOnly: boolean,
+): Partial<Record<EngineName, string[]>> {
+  if (!enginesFlag) throw new ConfigError('--versions requires --engines with exactly one engine.');
+  if (!engines || engines.length !== 1) {
+    throw new ConfigError('--versions requires exactly one engine; multiple engines cannot be tested together.');
+  }
+  if (strategy || latestOnly) throw new ConfigError('--versions cannot be combined with --strategy or --latest-only.');
+  const engine = engines[0];
+  if (engine === 'webkit') {
+    throw new ConfigError('WebKit supports the current build only; specific versions cannot be tested.');
+  }
+  const versions = [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))];
+  if (versions.length === 0 || versions.some((version) => !/^\d+$/.test(version))) {
+    throw new ConfigError(
+      '--versions accepts whole major versions only (for example: 120 or 120,115). ' +
+      'Valid ranges: Chromium: 60–current; Firefox: 52–current; WebKit: current only.',
+    );
+  }
+  const floor = engine === 'chromium' ? 60 : 52;
+  const belowFloor = versions.filter((version) => Number(version) < floor);
+  if (belowFloor.length) {
+    throw new ConfigError(
+      `${engine === 'chromium' ? 'Chromium' : 'Firefox'} versions must be in the supported range ` +
+      `${floor}–current. Invalid: ${belowFloor.join(', ')}.`,
+    );
+  }
+  return { [engine]: versions };
 }
 
 function num(v: string | undefined): number | undefined {
@@ -159,6 +209,7 @@ Usage:
   browser-boundary <url> --engines chromium,firefox
   browser-boundary <url> --pages /,/dashboard --base-url <url>
   browser-boundary <url> --strategy binary|step-down|latest|explicit
+  browser-boundary <url> --engines chromium --versions 120,115,110
   browser-boundary <url> --latest-only
   browser-boundary install                       install current Playwright browsers
   browser-boundary --help
@@ -169,6 +220,8 @@ Options:
   --pages <list>            comma-sep paths or URLs to also test
   --base-url <url>          base for relative --pages
   --strategy <s>            binary | step-down | latest | explicit (default: binary)
+  --versions <list>         exact major(s) to test; requires one --engines value
+  --exact-version <major>   alias for --versions when testing one exact major
   --latest-only             probe only the current build per engine
   --headless                run browsers invisibly (default: headed, windows shown)
   --format <list>           json,markdown (default: both)
@@ -195,6 +248,13 @@ Exit codes:
 
 WebKit note: only the current Playwright WebKit build is drivable; it is NOT
 reported as a specific Safari version.
-`.trim();
 
-export { positionals };
+Specific-version ranges:
+  Chromium  60–current
+  Firefox   52–current
+  WebKit    current only (specific versions unsupported)
+
+In headed specific-version mode, each browser stays open until you close its
+tab/window. The next requested version opens only after the current one closes.
+Specific-version mode accepts exactly one URL (not multiple --pages).
+`.trim();

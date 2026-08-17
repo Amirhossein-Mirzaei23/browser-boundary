@@ -59,6 +59,8 @@ export interface ResolvedPage {
 
 export function resolveConfig(input: ScanConfig): ResolvedConfig {
   const engines = input.engines && input.engines.length ? input.engines : [...DEFAULTS.engines];
+  validateEngines(engines);
+  validateExplicitConfig(input, engines);
 
   const pages: PageSpec[] = (input.urls ?? []).map((u, i) =>
     typeof u === 'string' ? { url: u, label: labelFor(u, i) } : { label: labelFor(u.url, i), ...u },
@@ -130,6 +132,52 @@ export class ConfigError extends Error {
   constructor(msg: string) {
     super(msg);
     this.name = 'ConfigError';
+  }
+}
+
+const VALID_ENGINES: EngineName[] = ['chromium', 'firefox', 'webkit'];
+
+function validateEngines(engines: EngineName[]): void {
+  const invalid = engines.find((engine) => !VALID_ENGINES.includes(engine));
+  if (invalid) throw new ConfigError(`Unknown engine "${invalid}". Valid engines: chromium, firefox, webkit.`);
+}
+
+function validateExplicitConfig(input: ScanConfig, engines: EngineName[]): void {
+  if (input.search?.strategy !== 'explicit') return;
+  if (engines.length !== 1) throw new ConfigError('Explicit version testing requires exactly one engine.');
+  if (input.urls.length !== 1) {
+    throw new ConfigError(
+      'Explicit version testing requires exactly one URL. Multiple --pages would reopen the same ' +
+      'version after closure instead of advancing to the next requested version.',
+    );
+  }
+  const engine = engines[0];
+  const versions = input.search.explicitVersions?.[engine];
+  if (!versions?.length) throw new ConfigError(`Explicit version testing requires at least one version for ${engine}.`);
+  if (engine === 'webkit') {
+    throw new ConfigError('WebKit supports only its current Playwright build; specific versions cannot be tested.');
+  }
+  const floor = engine === 'chromium' ? 60 : 52;
+  if (versions.some((version) => !/^\d+$/.test(version) || Number(version) < floor)) {
+    throw new ConfigError(
+      `${engine === 'chromium' ? 'Chromium' : 'Firefox'} versions must be whole major versions in the supported range ${floor}–current.`,
+    );
+  }
+}
+
+export function validateExplicitVersionsAgainstLatest(
+  engine: EngineName,
+  versions: string[],
+  latestMajor: number,
+): void {
+  const floor = engine === 'chromium' ? 60 : engine === 'firefox' ? 52 : latestMajor;
+  const invalid = versions.filter((version) => Number(version) < floor || Number(version) > latestMajor);
+  if (invalid.length) {
+    const label = engine === 'chromium' ? 'Chromium' : engine === 'firefox' ? 'Firefox' : 'WebKit';
+    throw new ConfigError(
+      `${label} versions must be in the supported range ${floor}–${latestMajor}. ` +
+      `Invalid requested version(s): ${invalid.join(', ')}.`,
+    );
   }
 }
 

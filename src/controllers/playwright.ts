@@ -124,6 +124,27 @@ class PlaywrightSession implements ControllerSession {
     await this.context.close().catch(() => {});
     await this.browser.close().catch(() => {});
   }
+
+  async waitForUserCloseAndClose(): Promise<void> {
+    // Listen for both ways a user can finish: closing just the tab or closing
+    // the whole browser window. Register listeners before checking current state
+    // so a close racing this method cannot leave the scan waiting forever.
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        this.page.off('close', finish);
+        this.browser.off('disconnected', finish);
+        resolve();
+      };
+      this.page.on('close', finish);
+      this.browser.on('disconnected', finish);
+      if (this.page.isClosed() || !this.browser.isConnected()) finish();
+    });
+    await this.context.close().catch(() => {});
+    await this.browser.close().catch(() => {});
+  }
 }
 
 /**

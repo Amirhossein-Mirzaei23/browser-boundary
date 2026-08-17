@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-08-17
+
+### Added
+- **Exact browser-version selection** — `--versions <major[,major...]>` tests
+  one or more requested major versions, while `--exact-version <major>` provides
+  a convenient single-version alias.
+- Exact-version requests require exactly one explicit `--engines` value and run
+  sequentially in the order supplied by the user.
+- Headed exact-version scans are user-controlled: each browser remains open
+  indefinitely until its tab or window is closed, and only then does the next
+  requested version open. The `--hold-open` timer is ignored for this mode.
+- Clear validation and help text for supported version ranges: Chromium
+  60–current, Firefox 52–current, and WebKit current-only.
+- CLI and API validation for malformed, duplicate, below-floor, above-current,
+  multi-engine, WebKit-specific, and conflicting strategy requests.
+
+### Changed
+- Specific-version mode accepts exactly one URL so closing the current browser
+  always advances directly to the next requested version; multiple `--pages`
+  are rejected with an actionable configuration error.
+- Explicit-version probes preserve the user's supplied order instead of sorting
+  versions numerically.
+- Browser cleanup now recognizes both Playwright tab closure and full-window
+  disconnection, and historical Firefox waits for WebDriver session closure.
+
+### Fixed
+- Post-launch errors no longer bypass the manual-close lifecycle in headed
+  exact-version mode.
+- Geckodriver cleanup now checks actual process exit state before escalating
+  from SIGTERM to SIGKILL, preventing stuck driver processes from leaking.
+
 ## [1.3.1] - 2026-08-11
 
 ### Added

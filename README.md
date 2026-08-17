@@ -2,6 +2,8 @@
 
 > Find the oldest browser version your website can actually run on.
 
+Current release: **1.4.0**
+
 `browser-boundary` is a **browser compatibility boundary detector** for real websites. It answers:
 
 > What is the oldest real browser version that can successfully run this website?
@@ -42,6 +44,17 @@ npx browser-boundary install
 
 > Historical Chrome/Firefox binaries are downloaded **on demand at scan time**, never during `npm install`. `@puppeteer/browsers` is an optional dependency used only for historical Chrome.
 
+`--versions` tests one exact major or a comma-separated list. It requires exactly
+one engine via `--engines`. Supported ranges are Chromium 60–current and Firefox
+52–current. WebKit supports only the current Playwright build, so specific WebKit
+versions cannot be requested. `--exact-version` is an alias for a single version.
+In headed mode, each requested browser stays open until you close its tab/window;
+only then does the next requested version open. The `--hold-open` timer is ignored
+for headed specific-version scans. Headless scans still close automatically.
+Specific-version mode currently accepts exactly one URL; combining it with
+multiple `--pages` is rejected so closing a browser always advances directly to
+the next requested version.
+
 ## CLI usage
 
 ```bash
@@ -50,6 +63,8 @@ npx browser-boundary https://example.com --engines chromium,firefox
 npx browser-boundary https://example.com --pages /,/dashboard --base-url https://example.com
 npx browser-boundary https://example.com --strategy binary      # default: step-down + binary search
 npx browser-boundary https://example.com --strategy latest      # probe current build only
+npx browser-boundary https://example.com --engines chromium --versions 120
+npx browser-boundary https://example.com --engines firefox --versions 120,115,110
 npx browser-boundary https://example.com --latest-only
 npx browser-boundary https://example.com --headed
 npx browser-boundary https://example.com --headed --hold-open 8          # keep window open 8s after checks
