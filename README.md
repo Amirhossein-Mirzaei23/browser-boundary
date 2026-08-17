@@ -1,254 +1,421 @@
 # browser-boundary
 
-> Find the oldest browser version your website can actually run on.
+Find the oldest real browser version that can run your website.
 
-Current release: **1.4.0**
+`browser-boundary` opens your site in real browser builds, checks whether it loads and renders correctly, and reports the oldest version it verified as passing alongside the first version it verified as failing. It does not spoof the User-Agent.
 
-`browser-boundary` is a **browser compatibility boundary detector** for real websites. It answers:
+## What it tests
 
-> What is the oldest real browser version that can successfully run this website?
+| Engine | Historical coverage | Driver |
+| --- | --- | --- |
+| Chromium | Major 60 to current | Playwright/CDP with Chromium snapshots and Chrome for Testing |
+| Firefox | Major 52 to current | geckodriver/WebDriver with builds from archive.mozilla.org |
+| WebKit | Current Playwright build only | Playwright |
 
-It tests **Chromium**, **Firefox**, and **WebKit** using **real historical browser binaries** (Chrome-for-Testing driven by Playwright/CDP; Firefox from archive.mozilla.org driven by geckodriver/WebDriver) — it never fakes versions by changing the User-Agent.
+WebKit results use `versionType: "playwright-revision"`. They are not Safari version claims. Testing historical Safari requires matching macOS versions or a device-testing service.
 
-## Try it on https://www.whatsmybrowser.org/
+## Install
 
-A great first test: [whatsmybrowser.org](https://www.whatsmybrowser.org/) renders the **actual** browser version, engine, and user-agent of whatever loads it. Point the tool at it and watch the reported version step down as the scan probes older binaries — visible proof that this tool runs *real historical browser builds*, not a faked User-Agent string:
+Requirements:
 
-```bash
-npx mrz-browser-compat https://www.whatsmybrowser.org/ --headed
-```
-
-The page it loads literally tells you which Chrome/Firefox opened it. If the version you see on screen matches the version the scan is probing, the binary is genuine.
-
-## What it is (and isn't)
-
-- **It is** a tool that finds the verified compatibility *boundary* per browser engine: "oldest verified passing version" and "first verified failing version."
-- **It is not** a Playwright alternative or a general browser-automation framework. It uses Playwright under the hood to drive real browsers.
-
-## Why it's different from normal browser testing
-
-Normal Playwright tests check that *your current browser* behaves correctly. This tool asks the inverse: given your site as-is, **which historical browser versions can still run it?** That reveals which ES/Web features your build is implicitly requiring, and gives you a data-backed Browserslist target — useful for deciding when it's safe to drop old-browser support.
-
-## Installation
+- Node.js 18 or newer
+- Playwright 1.40 or newer
 
 ```bash
-npm install -D browser-boundary
-```
-
-Playwright is a **peer dependency** — install browsers once:
-
-```bash
+npm install --save-dev browser-boundary playwright
 npx browser-boundary install
-# equivalent to: npx playwright install chromium firefox webkit
 ```
 
-> Historical Chrome/Firefox binaries are downloaded **on demand at scan time**, never during `npm install`. `@puppeteer/browsers` is an optional dependency used only for historical Chrome.
+The install command downloads the current Playwright Chromium, Firefox, and WebKit builds. Historical Chromium and Firefox builds are downloaded only when a scan needs them and cached under `~/.cache/browser-boundary/`.
 
-`--versions` tests one exact major or a comma-separated list. It requires exactly
-one engine via `--engines`. Supported ranges are Chromium 60–current and Firefox
-52–current. WebKit supports only the current Playwright build, so specific WebKit
-versions cannot be requested. `--exact-version` is an alias for a single version.
-In headed mode, each requested browser stays open until you close its tab/window;
-only then does the next requested version open. The `--hold-open` timer is ignored
-for headed specific-version scans. Headless scans still close automatically.
-Specific-version mode currently accepts exactly one URL; combining it with
-multiple `--pages` is rejected so closing a browser always advances directly to
-the next requested version.
+Historical scans also use these packages:
 
-## CLI usage
+```bash
+npm install --save-dev @puppeteer/browsers selenium-webdriver
+```
+
+`@puppeteer/browsers` is required for historical Chromium scans. `selenium-webdriver` is required for historical Firefox scans. They are declared as optional dependencies, but if your package manager omits optional packages you must install them before running a historical scan. Neither is needed for `--strategy latest`.
+
+## Quick start
+
+Run the default boundary search across Chromium, Firefox, and WebKit:
 
 ```bash
 npx browser-boundary https://example.com
-npx browser-boundary https://example.com --engines chromium,firefox
-npx browser-boundary https://example.com --pages /,/dashboard --base-url https://example.com
-npx browser-boundary https://example.com --strategy binary      # default: step-down + binary search
-npx browser-boundary https://example.com --strategy latest      # probe current build only
-npx browser-boundary https://example.com --engines chromium --versions 120
-npx browser-boundary https://example.com --engines firefox --versions 120,115,110
-npx browser-boundary https://example.com --latest-only
-npx browser-boundary https://example.com --headed
-npx browser-boundary https://example.com --headed --hold-open 8          # keep window open 8s after checks
-npx browser-boundary https://example.com --format json --output ./reports
-npx browser-boundary https://example.com --readiness-selector main --readiness-mode any
-npx browser-boundary https://example.com --min-confidence high
-npx browser-boundary https://example.com --wait-until load               # wait for full page load (default: domcontentloaded)
-npx browser-boundary https://example.com --http-cache                   # re-enable browser cache (disabled by default for accuracy)
-npx browser-boundary --help
 ```
 
-Environment variables (`MRZ_*`, with legacy `BC_*` aliases) are also supported; flags take precedence.
+Browsers are visible by default. Use `--headless` in CI or when you do not need to inspect them:
 
-## Library usage
+```bash
+npx browser-boundary https://example.com --headless
+```
+
+To confirm that real builds are being launched, scan a page that displays its browser version:
+
+```bash
+npx browser-boundary https://www.whatsmybrowser.org/ --engines chromium
+```
+
+The CLI writes `compatibility.json`, `compatibility.md`, and failure artifacts to `./reports` by default.
+
+## Common commands
+
+### Scan selected engines
+
+```bash
+npx browser-boundary https://example.com --engines chromium,firefox
+```
+
+### Test only current browser builds
+
+```bash
+npx browser-boundary https://example.com --strategy latest --headless
+```
+
+`--latest-only` is a shortcut for the same search mode:
+
+```bash
+npx browser-boundary https://example.com --latest-only --headless
+```
+
+### Test exact major versions
+
+```bash
+npx browser-boundary https://example.com \
+  --engines chromium \
+  --versions 120,115,110
+```
+
+Exact-version mode:
+
+- requires exactly one engine;
+- supports Chromium 60 to current and Firefox 52 to current;
+- does not support WebKit versions;
+- accepts one URL only;
+- tests versions sequentially in the order provided;
+- keeps each browser open until you close it when running headed.
+
+For one version, `--exact-version` is an alias:
+
+```bash
+npx browser-boundary https://example.com \
+  --engines firefox \
+  --exact-version 115
+```
+
+### Scan several pages
+
+```bash
+npx browser-boundary https://example.com \
+  --pages /,/login,/dashboard \
+  --base-url https://example.com
+```
+
+A positional URL is included in the scan. Values passed to `--pages` may be relative paths or full URLs.
+
+### Require rendered content
+
+Repeat `--readiness-selector` to provide more than one selector:
+
+```bash
+npx browser-boundary https://example.com \
+  --readiness-selector '#app' \
+  --readiness-selector '[data-hydrated]' \
+  --readiness-mode all
+```
+
+`--readiness-mode any` passes when one selector appears. `all` requires every selector.
+
+### Choose reports and output directory
+
+```bash
+npx browser-boundary https://example.com \
+  --format json,markdown \
+  --output ./browser-reports
+```
+
+### Show all CLI options
+
+```bash
+npx browser-boundary --help
+npx browser-boundary --version
+```
+
+## How boundary search works
+
+The default `binary` strategy does not run every historical version:
+
+1. Test the current browser.
+2. Step down by 10 major versions at a time until a failure is found.
+3. Binary-search the remaining gap.
+4. Report only versions that were actually verified.
+
+Change the initial interval with `--step-size`:
+
+```bash
+npx browser-boundary https://example.com --step-size 5
+```
+
+Available strategies:
+
+| Strategy | Behavior |
+| --- | --- |
+| `binary` | Step down, then binary-search the pass/fail gap. This is the default. |
+| `step-down` | Probe versions at the configured step interval. |
+| `latest` | Test the current build only. |
+| `explicit` | Test versions supplied through the API. The CLI selects this automatically for `--versions`. |
+
+The result is intentionally conservative. `oldestVerifiedPassing` means that exact version passed. `firstVerifiedFailing` means that exact version failed. Untested or unavailable versions are not silently treated as passing or failing.
+
+## What counts as a pass
+
+Each browser/version/page combination can check:
+
+- navigation, including DNS, TLS, timeout, and browser crashes;
+- uncaught JavaScript errors;
+- console errors that map to known compatibility features;
+- failed app-critical script, stylesheet, XHR, fetch, and font requests;
+- rendering and readiness selectors or predicates.
+
+Verdicts are kept separate:
+
+| Verdict | Meaning |
+| --- | --- |
+| `pass` | All enabled checks passed. |
+| `fail` | A compatibility failure was verified. |
+| `inconclusive` | Compatibility could not be determined, such as when a binary is unavailable or a WAF stalls navigation. |
+| `error` | Browser or host infrastructure failed. |
+| `skipped` | The search algorithm did not need to test the version. |
+
+Feature attribution also carries `high`, `medium`, `low`, or `unknown` confidence. Generic runtime errors are not automatically blamed on missing browser features.
+
+## CLI options
+
+| Option | Description |
+| --- | --- |
+| `--engines <list>` | Comma-separated `chromium`, `firefox`, and `webkit`. Default: all. |
+| `--pages <list>` | Additional comma-separated paths or URLs. |
+| `--base-url <url>` | Base URL for relative `--pages` values. |
+| `--strategy <name>` | `binary`, `step-down`, or `latest`. The CLI selects `explicit` when `--versions` is used. |
+| `--versions <list>` | Exact major versions; requires one explicit engine. |
+| `--exact-version <major>` | Alias for one exact version. |
+| `--latest-only` | Test current builds only. |
+| `--headless` | Hide browser windows. Browsers are headed by default. |
+| `--step-size <number>` | Major-version interval before binary search. Default: `10`. |
+| `--timeout <ms>` | Per-page navigation/readiness timeout. Default: `30000`. |
+| `--wait-until <event>` | `domcontentloaded` or `load`. Default: `domcontentloaded`. |
+| `--http-cache` | Enable the browser HTTP cache. It is disabled by default for scan accuracy. |
+| `--hold-open <seconds>` | Keep a headed browser open after checks. Default: `2`. |
+| `--readiness-selector <css>` | Required CSS selector. May be repeated. |
+| `--readiness-mode <mode>` | `any` or `all`. Default: `any`. |
+| `--min-confidence <level>` | Minimum feature confidence that can cause failure: `high`, `medium`, `low`, or `unknown`. Default: `low`. |
+| `--format <list>` | `json`, `markdown`, or both. Default: both. |
+| `-o, --output <dir>` | Report directory. Default: `./reports`. |
+| `-v, --version` | Print the installed version. |
+| `-h, --help` | Print CLI help. |
+
+## Library API
+
+```ts
+import { scan, writeJson, writeMarkdown } from 'browser-boundary';
+
+const result = await scan(
+  {
+    urls: [
+      'https://example.com',
+      {
+        url: 'https://example.com/dashboard',
+        label: 'dashboard',
+        readiness: {
+          selectors: ['#app', '[data-hydrated]'],
+          mode: 'all',
+        },
+      },
+    ],
+    engines: ['chromium', 'firefox'],
+    search: {
+      strategy: 'binary',
+      stepSize: 10,
+      floor: { chromium: 80, firefox: 78 },
+    },
+    headed: false,
+    network: {
+      ignoredPatterns: [/google-analytics\.com/i],
+    },
+  },
+  {
+    onProgress: console.log,
+  },
+);
+
+for (const summary of result.summaries) {
+  console.log(summary.engine, summary.resultLine);
+}
+
+writeJson(result, './reports');
+writeMarkdown(result, './reports');
+```
+
+`scan()` returns a `ScanResult`; it does not write the JSON or Markdown summary automatically. The CLI writes both by default. Failure screenshots, traces, and logs are generated during checks under the configured output directory.
+
+### Custom readiness function
+
+A page can override the top-level readiness rule:
 
 ```ts
 import { scan } from 'browser-boundary';
 
 const result = await scan({
-  urls: ['https://example.com', 'https://example.com/about'],
-  engines: ['chromium', 'firefox', 'webkit'],
-  search: { strategy: 'binary', stepSize: 10 },
-  readiness: { selectors: ['main'], mode: 'any' },
-  network: { ignoredPatterns: [/google-analytics/, /googletagmanager/] },
-  output: { format: ['json', 'markdown'], directory: './reports' },
-});
-
-for (const s of result.summaries) {
-  console.log(`${s.engine}: ${s.resultLine} (confidence: ${s.boundaryConfidence})`);
-}
-```
-
-Per-URL readiness (selector or custom function):
-
-```ts
-await scan({
   urls: [
-    { url: 'https://app.com', readiness: { selectors: ['#app', '[data-hydrated]'], mode: 'all' } },
-    { url: 'https://app.com/dash', readiness: async ({ page }) => {
-      await page.waitForSelector('#dash', { timeout: 15000 });
-      return true;
-    } },
+    {
+      url: 'https://example.com/dashboard',
+      readiness: async ({ page }) => {
+        await page.waitForSelector('[data-dashboard-ready]');
+        return true;
+      },
+    },
   ],
+  engines: ['chromium'],
+  search: { strategy: 'latest' },
 });
 ```
 
-## Configuration
+### Exact versions through the API
 
 ```ts
-{
+import { scan } from 'browser-boundary';
+
+const result = await scan({
+  urls: ['https://example.com'],
+  engines: ['chromium'],
+  search: {
+    strategy: 'explicit',
+    explicitVersions: {
+      chromium: ['120', '115', '110'],
+    },
+  },
+  headed: false,
+});
+```
+
+### Main configuration fields
+
+```ts
+interface ScanConfig {
   urls: (string | PageSpec)[];
-  engines?: EngineName[];            // default: all three
-  search?: { strategy?, stepSize?, floor?, explicitVersions? };
-  checks?: { navigation?, javascript?, console?, network?, rendering?, readiness? }; // all default true
-  readiness?: { selectors: string[]; mode?: 'any' | 'all' };  // top-level default
-  network?: {
-    ignoredPatterns?: (RegExp | string)[];          // non-fatal failures
-    criticalResourceTypes?: ResourceType[];         // fatal failures
+  engines?: ('chromium' | 'firefox' | 'webkit')[];
+  siteName?: string;
+
+  search?: {
+    strategy?: 'binary' | 'step-down' | 'latest' | 'explicit';
+    stepSize?: number;
+    floor?: Partial<Record<EngineName, number>>;
+    explicitVersions?: Partial<Record<EngineName, string[]>>;
   };
-  analysis?: { minConfidence?: 'high' | 'medium' | 'low' | 'unknown' };
-  hooks?: { beforeGoto?: (...) => Promise<void> };  // opt-in (e.g. anti-bot warm-up)
-  waitUntil?: 'domcontentloaded' | 'load';  // default: domcontentloaded (use 'load' for full page)
-  disableHttpCache?: boolean;        // default true (cached 200 can mask real failures)
-  holdOpenSec?: number;              // default 2 (hold window open N sec after checks; great in headed mode)
-  timeout?: number;                  // default 30000
-  headed?: boolean;                  // default true
-  retries?: number;                  // default 3 (transient only)
-  output?: { format?: ('json' | 'markdown')[]; directory?: string };
-  cache?: { directory?: string };    // default ~/.cache/browser-boundary
+
+  readiness?: {
+    selectors: string[];
+    mode?: 'any' | 'all';
+  };
+
+  checks?: {
+    navigation?: boolean;
+    javascript?: boolean;
+    console?: boolean;
+    network?: boolean;
+    rendering?: boolean;
+    readiness?: boolean;
+  };
+
+  network?: {
+    ignoredPatterns?: (RegExp | string)[];
+    criticalResourceTypes?: ResourceType[];
+  };
+
+  analysis?: {
+    minConfidence?: 'high' | 'medium' | 'low' | 'unknown';
+  };
+
+  timeout?: number;
+  headed?: boolean;
+  retries?: number;
+  viewport?: { width: number; height: number };
+  waitUntil?: 'domcontentloaded' | 'load';
+  disableHttpCache?: boolean;
+  holdOpenSec?: number;
+
+  output?: {
+    format?: ('json' | 'markdown')[];
+    directory?: string;
+  };
+
+  cache?: {
+    directory?: string;
+  };
 }
 ```
 
-The core has **no** hardcoded knowledge of any website — selectors, analytics hosts, and anti-bot behavior are all supplied through this config. (See `examples/tabdeal.ts` for a fully-configured real-world example.)
+See the exported TypeScript declarations for `PageSpec`, hooks, custom providers, progress events, and result types.
 
-## Browser engines
+## Reports and artifacts
 
-| Engine | Real historical binaries? | How |
-|---|---|---|
-| Chromium | ✅ | Chrome-for-Testing via `@puppeteer/browsers`, driven by Playwright/CDP (CDP is native to every Chrome build) |
-| Firefox | ✅ (≥52) | Real builds from archive.mozilla.org, driven by **geckodriver / W3C WebDriver** (not Playwright — see below) |
-| WebKit | ⚠️ current-only | Playwright's patched WebKit build only — historical Safari is macOS-locked |
+The default report directory contains:
 
-> **Why Firefox uses geckodriver, not Playwright:** Playwright can only drive its *own* patched Firefox build (which contains the Juggler instrumentation protocol). Vanilla release builds from `archive.mozilla.org` lack Juggler — they launch and exit immediately without responding. So historical Firefox is driven by geckodriver, which speaks **Marionette** (built into every Firefox ≥48). The tool downloads the right geckodriver per Firefox version from a vendored compatibility matrix. Firefox < 52 (geckodriver's floor) is reported **inconclusive**, never substituted.
->
-> **Why WebKit stays current-only:** Safari is macOS-only and version-locked to macOS — there is no standalone historical Safari archive, and Playwright's WebKit patch only ships a current build. Historical Safari needs macOS hardware or a cloud-device service (not supported here).
+```text
+reports/
+├── compatibility.json
+├── compatibility.md
+└── artifacts/
+    ├── screenshots/
+    ├── traces/
+    └── logs/
+```
 
-## Version search algorithm
+Reports can include target URLs, request URLs, console output, and errors from the tested site. Review them before sharing.
 
-Per engine (Chromium/Firefox), over the descending version list:
+## CI
 
-1. **Latest first** — probe the current build.
-2. **Step down** by `stepSize` (default 10) majors until a version FAILS.
-3. **Binary search** the gap between the last pass and first fail to pin the exact boundary.
-4. **Skip** everything the boundary implies (no exhaustive scan).
-5. `--strategy latest` short-circuits to step 1; `--strategy explicit` tests only the versions you list.
-
-Honesty contract: results describe **verified** boundaries only. The tool never claims "all versions below X are unsupported" for untested versions. See `boundaryConfidence` (`high` after binary search, `low` for a single probe).
-
-## Compatibility checks
-
-A version **passes** only if all enabled checks succeed:
-
-1. **Navigation** — `page.goto` resolves without DNS/TLS/timeout/crash.
-2. **JavaScript** — no uncaught `pageerror`. (Console errors fail only when mapped to a known feature; warnings never fail.)
-3. **Network** — app-critical JS/CSS/API/font requests succeed. Analytics/tracking failures are non-fatal (configurable).
-4. **Rendering** — the page renders (verified via readiness).
-5. **Readiness** — configurable selectors (`any`/`all`) or a custom predicate become true within the timeout.
-
-A version is **fail** on a real compatibility problem; **inconclusive** if it couldn't be determined (e.g. anti-bot stall); **error** on infrastructure failure (browser wouldn't launch) — these are kept distinct so CI doesn't conflate infra problems with compat problems.
-
-## Error analysis & confidence
-
-Failures are mapped to ES/Web features **with a confidence level**, not false certainty:
-
-- `high` — a SyntaxError uniquely identifying missing syntax (e.g. `Unexpected token '?.'` → Optional chaining).
-- `medium` — a named API missing (e.g. `structuredClone is not defined`).
-- `low` — a method-not-found that *could* be a missing polyfill.
-- `unknown` — a generic runtime error (e.g. `Cannot read properties of undefined`) is **almost always an app bug**, not a compat issue. It is NOT attributed to a feature. (`--min-confidence` controls the FAIL threshold.)
-
-## Reports
-
-- `reports/compatibility.json` — full machine-readable scan.
-- `reports/compatibility.md` — human report: verified boundary, reasons, ES/Web findings table, suggested Browserslist target.
-- `reports/artifacts/` — failure screenshots, Playwright traces, `console-*.log`, `failed-requests-*.log`.
-
-## CI usage
-
-Exit codes distinguish outcomes:
-
-| Code | Meaning |
-|---|---|
-| 0 | scan completed (no verified compat failure) |
-| 1 | compatibility failure (a verified boundary failure was found) |
-| 2 | configuration error |
-| 3 | infrastructure / browser error |
+Use headless mode and usually test current builds for a fast compatibility gate:
 
 ```bash
-npx browser-boundary https://staging.example.com --strategy latest
+npx browser-boundary https://staging.example.com \
+  --strategy latest \
+  --headless \
+  --output ./browser-reports
 ```
 
-## Historical browser limitations
+Exit codes:
 
-- Playwright ships **one build per engine per release**; `playwright install <engine>@N` is unsupported. Historical Chrome is fetched via Chrome-for-Testing (driven by Playwright/CDP); historical Firefox is fetched from archive.mozilla.org (driven by geckodriver/WebDriver).
-- **A version that cannot be obtained is reported `inconclusive`, never substituted.** If a real historical binary for the requested version can't be downloaded or driven, the tool records `inconclusive` for that exact version — it never tests a *different* version (e.g. current) and reports it under the requested version's name. This applies to both Chrome and Firefox.
-- **Firefox < 52** is below geckodriver's supported floor and cannot be driven. Below ~ESR 52, modern HTTPS may also fail (TLS/cipher support) even when drivable.
-- Very old Chrome builds may not run on modern Linux (sandbox/ABI/glibc). Set `search.floor` to keep the search above realistic floors (defaults: chromium 60, firefox 60, webkit 13).
-- User-Agent is **never** changed — that is not equivalent to running an older engine.
+| Code | Meaning |
+| --- | --- |
+| `0` | Scan completed without a verified compatibility failure. |
+| `1` | At least one verified compatibility failure was found. |
+| `2` | Configuration is invalid. |
+| `3` | Browser or host infrastructure failed. |
 
-## WebKit limitations (historical testing)
+## Limitations
 
-Historical **Safari/WebKit cannot be tested** off Apple hardware. Safari is distributed only via macOS Software Update, is version-locked to macOS, and Apple does not publish standalone drivable historical binaries. Playwright's WebKit is a patched current build only.
+- Historical browser archives are incomplete. An unavailable version is reported as inconclusive rather than replaced with a different build.
+- Old binaries may not start on modern Linux because of sandbox, ABI, or system-library incompatibilities.
+- Firefox below 52 cannot be driven by the supported geckodriver path.
+- WebKit is current-only and must not be interpreted as a Safari major version.
+- Anti-bot and WAF behavior can prevent a result even when the site supports the browser.
+- A passing scan verifies the configured pages and checks, not every route or feature in the application.
 
-So WebKit results are always the **current Playwright build** and are reported with `versionType: 'playwright-revision'`. They are **not** equivalent to a specific Safari version. Don't stringify them as "Safari N". The tool probes WebKit latest-only and notes the limitation in the report. (Historical Safari would require a macOS CI matrix with matching macOS images, or a cloud-device service such as BrowserStack.)
-
-## Browser binary caching
-
-Real historical binaries are cached under `~/.cache/browser-boundary/` (global, shared across projects; overridable via `cache.directory` or `MRZ_BROWSER_CACHE`). A manifest deduplicates downloads so a version isn't re-fetched.
-
-## Security / privacy
-
-- This tool drives a real browser to URLs **you** specify. Only use it against sites you own or are authorized to test.
-- The opt-in `hooks.beforeGoto` is for legitimate anti-bot warm-ups (e.g. obtaining a session cookie your site issues); it uses the browser's real TLS fingerprint and does not spoof identity.
-- Reports may contain request URLs and error text from the target site — review before sharing.
+Only scan sites you own or are authorized to test.
 
 ## Development
 
 ```bash
 npm install
-npm run typecheck      # tsc --noEmit
-npm test               # unit tests (offline, fast)
-npm run test:fixtures  # integration tests against local fixtures (needs Playwright)
-npm run build          # tsup → dist/ (ESM + CJS + d.ts)
-npm run pack-check     # verify npm pack contents/size
+npm run test
+npm run typecheck
+npm run build
+npm run test:fixtures
+npm run pack-check
 ```
 
-The unit test suite is deterministic and **never** touches external websites — it uses local fixtures under `tests/fixtures/`. See `examples/tabdeal.ts` for a real-world (network) example.
-
-## Contributing
-
-PRs welcome. Please:
-
-- Keep **no site-specific knowledge** in `src/core`, `src/detection`, `src/analysis`, or `src/reporting` — site behavior belongs in config/examples.
-- Add/extend unit tests for any logic change (version-search, analyzer, network classification are pure and fully testable).
-- Preserve the honesty contract: verified boundaries only, confidence levels, WebKit Playwright-revision labeling.
+The source is split into browser providers, automation controllers, compatibility checks, boundary search, and report generation. Site-specific selectors and workarounds belong in caller configuration or examples, not in the core.
 
 ## License
 
