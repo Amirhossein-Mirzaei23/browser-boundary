@@ -32,7 +32,11 @@ export interface VersionSearchOptions {
 
 export async function searchBoundary(opts: VersionSearchOptions): Promise<SearchOutcome> {
   const { versions, test, strategy } = opts;
-  const descending = [...versions].sort((a, b) => Number(b) - Number(a));
+  // Explicit probes run in the exact order supplied by the user. Boundary
+  // searches still require newest-to-oldest numeric ordering.
+  const descending = strategy === 'explicit'
+    ? [...versions]
+    : [...versions].sort((a, b) => Number(b) - Number(a));
   if (descending.length === 0) {
     return emptyOutcome();
   }

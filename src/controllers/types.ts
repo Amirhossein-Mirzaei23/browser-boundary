@@ -69,6 +69,8 @@ export interface ControllerSession {
   startTrace(): Promise<void>;
   /** Hold the window open `sec` seconds, then close the session. */
   holdOpenAndClose(sec: number): Promise<void>;
+  /** Wait indefinitely for the user to close the visible tab/window, then clean up. */
+  waitForUserCloseAndClose(): Promise<void>;
 }
 
 /** A controller: produces sessions from a resolved binary + config. */
