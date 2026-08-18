@@ -200,7 +200,7 @@ export class ChromiumProvider {
         // Geo-block / network failure: the whole bucket is unreachable from
         // here. No point probing nearby revisions — they'll fail identically.
         throw new HistoricalUnavailableError(
-          `(Use a VPN) Chromium snapshot downloads are unavailable in your location for Chrome ${major}; ` +
+          `(Use a VPN only for first time download to be able cache this version) Chromium snapshot downloads are unavailable in your location for Chrome ${major}; ` +
             `this version was not tested.`,
           'download-failed',
         );
