@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2026-08-18
+
+### Changed
+- The README now prioritizes global installation for local/manual use, documents
+  `npx` as the non-global alternative, and recommends pinned local dependencies
+  for CI/CD and per-project workflows.
+
+### Fixed
+- Historical Chromium cache manifests are now checked before snapshot-bucket or
+  Chrome-for-Testing network resolution, allowing valid cached binaries to run
+  when their download source is unavailable or geo-blocked.
+
 ## [1.4.0] - 2026-08-17
 
 ### Added

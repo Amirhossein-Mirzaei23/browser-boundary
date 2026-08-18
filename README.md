@@ -62,6 +62,22 @@ Browserslist and Can I Use answer a different question. They use declared target
 
 You need Node.js 18 or newer and Playwright 1.40 or newer.
 
+For local and manual use, install the CLI globally and download the current browser builds:
+
+```bash
+npm install -g browser-boundary playwright
+browser-boundary install
+```
+
+If you do not want a global install, use `npx` instead:
+
+```bash
+npx browser-boundary install
+npx browser-boundary https://example.com
+```
+
+For CI/CD or projects that need pinned dependency versions, install locally as development dependencies:
+
 ```bash
 npm install --save-dev browser-boundary playwright
 npx browser-boundary install
@@ -70,7 +86,7 @@ npx browser-boundary install
 The install command downloads the current Playwright browser builds. Historical Chromium and Firefox builds are downloaded only when a scan needs them, then cached under `~/.cache/browser-boundary/`.
 
 > [!IMPORTANT]
-> `npx browser-boundary install` downloads Chromium, Firefox, and WebKit. Expect several hundred megabytes of downloads and allow a few minutes on a cold CI runner or slow connection. The exact size and time depend on the Playwright release, platform, and network. Historical scans download additional builds as needed, so cache the Playwright browser directory and `~/.cache/browser-boundary/` in CI when practical.
+> `browser-boundary install` downloads Chromium, Firefox, and WebKit. Expect several hundred megabytes of downloads and allow a few minutes on a cold CI runner or slow connection. The exact size and time depend on the Playwright release, platform, and network. Historical scans download additional builds as needed, so cache the Playwright browser directory and `~/.cache/browser-boundary/` in CI when practical.
 
 Historical scanning uses the package's optional `@puppeteer/browsers` and `selenium-webdriver` dependencies. If your package manager omits optional dependencies, install them manually:
 
@@ -81,13 +97,15 @@ npm install --save-dev @puppeteer/browsers selenium-webdriver
 ### 2. Scan a site
 
 ```bash
-npx browser-boundary https://example.com
+browser-boundary https://example.com
 ```
+
+With the alternative non-global workflow, prefix the command with `npx`: `npx browser-boundary https://example.com`.
 
 Browser windows are visible by default, making it easy to watch each test. Hide them in CI or automated runs:
 
 ```bash
-npx browser-boundary https://example.com --headless
+browser-boundary https://example.com --headless
 ```
 
 The default scan checks Chromium, Firefox, and WebKit and writes its results to `./reports`.
@@ -129,7 +147,7 @@ These values are examples, not claims about `example.com`. Your results depend o
 Want visible proof that the tool launches real builds? Scan a page that displays its own browser version:
 
 ```bash
-npx browser-boundary https://www.whatsmybrowser.org/ --engines chromium
+browser-boundary https://www.whatsmybrowser.org/ --engines chromium
 ```
 
 ## Common recipes
@@ -137,25 +155,25 @@ npx browser-boundary https://www.whatsmybrowser.org/ --engines chromium
 ### Pick browser engines
 
 ```bash
-npx browser-boundary https://example.com --engines chromium,firefox
+browser-boundary https://example.com --engines chromium,firefox
 ```
 
 ### Run a fast current-browser check
 
 ```bash
-npx browser-boundary https://example.com --strategy latest --headless
+browser-boundary https://example.com --strategy latest --headless
 ```
 
 `--latest-only` is a shortcut for the same search mode:
 
 ```bash
-npx browser-boundary https://example.com --latest-only --headless
+browser-boundary https://example.com --latest-only --headless
 ```
 
 ### Test exact browser majors
 
 ```bash
-npx browser-boundary https://example.com \
+browser-boundary https://example.com \
   --engines chromium \
   --versions 120,115,110
 ```
@@ -163,7 +181,7 @@ npx browser-boundary https://example.com \
 Use `--exact-version` when you need only one:
 
 ```bash
-npx browser-boundary https://example.com \
+browser-boundary https://example.com \
   --engines firefox \
   --exact-version 115
 ```
@@ -181,7 +199,7 @@ WebKit does not support exact historical versions.
 ### Scan several routes
 
 ```bash
-npx browser-boundary https://example.com \
+browser-boundary https://example.com \
   --pages /,/login,/dashboard \
   --base-url https://example.com
 ```
@@ -193,7 +211,7 @@ The positional URL is included in the scan. `--pages` accepts relative paths and
 A page loading is not always the same as an app being ready. Require one or more CSS selectors before the scan passes:
 
 ```bash
-npx browser-boundary https://example.com \
+browser-boundary https://example.com \
   --readiness-selector '#app' \
   --readiness-selector '[data-hydrated]' \
   --readiness-mode all
@@ -204,7 +222,7 @@ npx browser-boundary https://example.com \
 ### Choose report formats and location
 
 ```bash
-npx browser-boundary https://example.com \
+browser-boundary https://example.com \
   --format json,markdown \
   --output ./browser-reports
 ```
@@ -306,8 +324,8 @@ browser-boundary <url> [options]
 | `-h, --help` | Show CLI help. |
 
 ```bash
-npx browser-boundary --help
-npx browser-boundary --version
+browser-boundary --help
+browser-boundary --version
 ```
 
 ### Exit codes
@@ -434,7 +452,7 @@ The package also exports result types, browser-provider interfaces, report rende
 
 ## CI example
 
-Current-browser checks are a practical fast gate for pull requests:
+Current-browser checks are a practical fast gate for pull requests. CI uses the pinned per-project install described above, so invoke its local CLI with `npx`:
 
 ```yaml
 - name: Install browser-boundary
