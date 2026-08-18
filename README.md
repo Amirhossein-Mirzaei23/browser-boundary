@@ -11,7 +11,7 @@
 
 Real browser binaries. Verified compatibility boundaries. No User-Agent spoofing.
 
-[Quick start](#quick-start) · [How it works](#how-the-search-works) · [CLI reference](#cli-reference) · [Library API](#library-api)
+[Quick start](#quick-start) · [How it works](#how-the-search-works) · [CLI reference](#cli-reference) · [Library API](#library-api) · [FAQ](#troubleshooting-and-faq)
 
 </div>
 
@@ -26,16 +26,24 @@ Instead of returning a vague compatibility range, it reports two concrete points
 
 Versions the scanner could not test remain inconclusive. They are never silently counted as passes or failures.
 
+**Why this matters:** a support policy may claim "works on Chrome 90+," while a real scan can verify that Chrome 96 passes and Chrome 95 fails on the routes that matter to your application.
+
 ## Why browser-boundary?
 
-| | browser-boundary |
+| Aspect | browser-boundary |
 | --- | --- |
 | Browser identity | Launches the real binary; never changes only the User-Agent |
-| Historical testing | Chromium 60 to current and Firefox 52 to current |
+| Historical testing | Tests Chromium 60 to current and Firefox 52 to current |
 | Search speed | Steps through releases, then binary-searches the pass/fail gap |
 | Failure signals | Navigation, JavaScript, console, network, rendering, and app readiness |
 | Evidence | JSON and Markdown reports, screenshots, traces, and logs |
 | Automation | CLI exit codes plus a typed TypeScript API |
+
+## Comparison to alternatives
+
+BrowserStack and Sauce Labs provide broad cloud coverage across real devices, operating systems, and Safari releases. Use them when device coverage, hosted infrastructure, or cross-platform manual testing matters. `browser-boundary` is a focused, local or CI-friendly tool for finding a verified pass/fail boundary across browser versions you can launch from your own runner.
+
+Browserslist and Can I Use answer a different question. They use declared targets and static feature-support data; they do not load your deployed application, exercise its routes, or observe its runtime failures. `browser-boundary` complements them by turning an expected support range into evidence from real execution.
 
 ## Browser coverage
 
@@ -61,6 +69,9 @@ npx browser-boundary install
 
 The install command downloads the current Playwright browser builds. Historical Chromium and Firefox builds are downloaded only when a scan needs them, then cached under `~/.cache/browser-boundary/`.
 
+> [!IMPORTANT]
+> `npx browser-boundary install` downloads Chromium, Firefox, and WebKit. Expect several hundred megabytes of downloads and allow a few minutes on a cold CI runner or slow connection. The exact size and time depend on the Playwright release, platform, and network. Historical scans download additional builds as needed, so cache the Playwright browser directory and `~/.cache/browser-boundary/` in CI when practical.
+
 Historical scanning uses the package's optional `@puppeteer/browsers` and `selenium-webdriver` dependencies. If your package manager omits optional dependencies, install them manually:
 
 ```bash
@@ -84,6 +95,36 @@ The default scan checks Chromium, Firefox, and WebKit and writes its results to 
 ### 3. Read the result
 
 The terminal summary shows each engine's oldest verified pass and first verified failure. Full findings are written to `reports/compatibility.json` and `reports/compatibility.md`. Only versions shown as verified were used to determine the boundary.
+
+An illustrative terminal summary looks like this:
+
+```text
+Summary
+-------
+  engine     oldestVerifiedPassing  firstVerifiedFailing
+  chromium   109                    108
+  firefox    102                    101
+  webkit     pw-1234                n/a
+```
+
+The generated `compatibility.md` records the same boundary with the evidence attached:
+
+```markdown
+## Chromium
+
+- Latest tested: **124**
+- Oldest verified passing: **109**
+- First verified failing: **108**
+- Boundary confidence: **high**
+
+**Result:**
+
+- verified PASS >= 109; verified FAIL at 108
+```
+
+These values are examples, not claims about `example.com`. Your results depend on the target pages, enabled checks, available binaries, and host environment.
+
+<!-- TODO: add terminal recording/screenshot -->
 
 Want visible proof that the tool launches real builds? Scan a page that displays its own browser version:
 
@@ -411,6 +452,73 @@ Current-browser checks are a practical fast gate for pull requests:
 
 Use a historical boundary scan on a schedule or before releases when downloading multiple browser builds would make every pull request too slow.
 
+### Sandboxing and containers
+
+You do not need root or a privileged container to run a scan. Chromium launches with `--no-sandbox` and `--disable-dev-shm-usage` for compatibility with common CI containers. Because disabling Chromium's sandbox reduces process isolation, run scans in an isolated, short-lived CI worker and avoid exposing secrets to the browser process.
+
+Install browser system libraries during image construction rather than elevating the test job at runtime:
+
+```dockerfile
+FROM node:20-bookworm
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci \
+  && npx playwright install-deps \
+  && npx browser-boundary install
+```
+
+Pin the image and Playwright/package versions for repeatable current-browser runs. Historical binaries may still require libraries or ABI versions absent from a modern base image. If one cannot launch, use a compatible older image or VM for that range, or leave the result inconclusive. Do not grant `--privileged` merely to turn an infrastructure error into a compatibility verdict.
+
+## Troubleshooting and FAQ
+
+### Why does an old browser fail to launch on modern Linux?
+
+Historical binaries were built against the libraries and kernels available when they shipped. A current Linux runner may have incompatible glibc/GTK/NSS libraries, a different sandbox setup, or no virtual display for headed mode.
+
+Try these in order:
+
+1. Run with `--headless` on CI.
+2. Install Playwright's system dependencies with `sudo npx playwright install-deps` on a disposable runner, or run that command as root while building a container image.
+3. Check the reported executable directly with `ldd <executable-path>` for missing shared libraries.
+4. Test the affected version in a container or VM whose Linux generation is closer to the browser release.
+5. If the host cannot launch that binary reliably, keep the result inconclusive rather than treating it as a website failure.
+
+Chromium already receives `--no-sandbox` and `--disable-dev-shm-usage`. Firefox historical builds use geckodriver and may have different library requirements. There is no single modern Linux image that can reliably launch every historical release.
+
+### What should I do when many versions are inconclusive?
+
+Read each result's `reason` in `compatibility.json` and check `reports/artifacts/` before changing the search range. A cluster of download or launch errors usually points to the runner; repeated navigation stalls may point to DNS, TLS, authentication, a WAF, or an unavailable test environment.
+
+- Run `--strategy latest` first to verify the current browser and target site work on the same runner.
+- Narrow the problem to one engine with `--engines chromium` or `--engines firefox`.
+- Probe a few known majors with `--versions` instead of repeating a full boundary search.
+- Increase `--timeout` when the page is slow, and add readiness selectors that identify actual app hydration.
+- Confirm optional dependencies are installed for historical scans.
+- Move the scan to a compatible runner when the reason is a missing library or browser launch failure.
+
+Inconclusive versions do not establish either side of the boundary. Do not convert them to passes or failures in downstream automation.
+
+### How large can `~/.cache/browser-boundary/` become?
+
+Each historical browser build can consume hundreds of megabytes after extraction. A wide scan or several projects can grow the cache to multiple gigabytes. Check its current size with:
+
+```bash
+du -sh ~/.cache/browser-boundary/
+```
+
+The cache is disposable. Remove it when you need the space; later scans will download required builds again:
+
+```bash
+rm -rf ~/.cache/browser-boundary/
+```
+
+Do not clear the cache while a scan is running. In CI, use a cache key that includes the operating system, architecture, package version, and Playwright version to avoid restoring incompatible binaries.
+
+### Does browser-boundary replace device-cloud testing?
+
+No. It finds verified boundaries on the engines and host environments it can launch. Use BrowserStack, Sauce Labs, or physical devices for mobile hardware, operating-system integration, and historical Safari coverage.
+
 ## Limitations
 
 - Historical browser archives are incomplete. Missing versions remain inconclusive.
@@ -436,6 +544,24 @@ npm run pack-check
 ```
 
 The codebase is split into browser providers, automation controllers, compatibility checks, version search, and report generation. Keep site-specific selectors and workarounds in caller configuration or examples rather than the core package.
+
+## Contributing
+
+Bug reports and focused pull requests are welcome. Before opening a PR:
+
+1. Create a branch from `main` and keep the change scoped to one problem.
+2. Add or update tests for behavior changes. Documentation-only changes do not need synthetic tests.
+3. Match the existing TypeScript style and keep site-specific rules out of the core scanner.
+4. Run the same checks used by CI:
+
+```bash
+npm run test
+npm run typecheck
+npm run build
+npm run pack-check
+```
+
+Run `npm run test:fixtures` when changing browser controllers, detection, readiness, or report behavior. In the PR description, explain the problem, the chosen approach, and how you verified it. Do not commit generated reports, downloaded browser binaries, caches, or credentials.
 
 ## License
 
