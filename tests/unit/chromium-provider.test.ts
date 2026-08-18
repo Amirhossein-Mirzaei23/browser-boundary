@@ -74,6 +74,36 @@ test('ChromiumProvider.install returns the Playwright build for latest-or-newer'
   assert.equal(binary.limitationNote, null);
 });
 
+test('REGRESSION: ChromiumProvider.install uses a cached historical binary without probing the network', async () => {
+  const c = new ChromiumProvider();
+  (c as unknown as { playwright: { getLatest: () => Promise<unknown> } }).playwright = {
+    getLatest: async () => ({ version: '999', executablePath: '/x', buildLabel: 'Chrome 999', versionType: 'real-major' }),
+  };
+  const cache = mkdtempSync(path.join(tmpdir(), 'mrz-chromium-cached-'));
+  const exe = path.join(cache, 'snapshots', 'chromium-89-776874', 'chrome-linux', 'chrome');
+  mkdirSync(path.dirname(exe), { recursive: true });
+  writeFileSync(exe, '');
+  writeFileSync(
+    path.join(cache, 'chromium-89-mrz-installed.json'),
+    JSON.stringify({ executablePath: exe, buildLabel: 'Chromium 89 (snapshot r776874)' }),
+  );
+
+  let fetchCalls = 0;
+  globalThis.fetch = (async () => {
+    fetchCalls++;
+    return new Response(null, { status: 403 });
+  }) as FetchImpl;
+  try {
+    const binary = await c.install('chromium', '89', cache);
+    assert.equal(binary.executablePath, exe);
+    assert.equal(binary.buildLabel, 'Chromium 89 (snapshot r776874)');
+    assert.equal(binary.isPlaywrightBuild, false);
+    assert.equal(fetchCalls, 0, 'a valid cache hit must not require snapshot-bucket access');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('REGRESSION: majors below CFT existence floor route to the snapshot source, not CFT', async () => {
   // Major 111 is in the snapshot range (60–112). The provider must NOT route it
   // to the CFT path (which would 404/403). We assert routing by stubbing both
@@ -208,7 +238,10 @@ test('downloadChromiumSnapshot throws HistoricalUnavailableError immediately on 
       (err: unknown) => {
         assert.ok(err instanceof HistoricalUnavailableError);
         assert.equal((err as HistoricalUnavailableError).code, 'download-failed');
-        assert.match((err as Error).message, /unreachable/);
+        assert.match(
+          (err as Error).message,
+          /^\(Use a VPN\) Chromium snapshot downloads are unavailable in your location/,
+        );
         return true;
       },
     );

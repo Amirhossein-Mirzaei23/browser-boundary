@@ -1,6 +1,6 @@
 {
   "name": "browser-boundary",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "Find the oldest real browser version your website can actually run on. Detects compatibility boundaries across Chromium/Firefox/WebKit using real historical browser binaries.",
   "license": "MIT",
   "type": "module",

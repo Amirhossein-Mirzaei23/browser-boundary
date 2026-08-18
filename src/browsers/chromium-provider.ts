@@ -107,6 +107,11 @@ export class ChromiumProvider {
     cacheDir: string,
     onProgress?: FetchProgressHandler,
   ): Promise<{ executablePath: string; buildLabel: string }> {
+    const tag = `chromium-${major}`;
+    const recordPath = path.join(cacheDir, `${tag}-${INSTALLED_FLAG}`);
+    const cached = await readManifest(recordPath);
+    if (cached) return cached;
+
     const { install, computeExecutablePath, Browser, resolveBuildId, detectBrowserPlatform } =
       await import('@puppeteer/browsers');
 
@@ -131,11 +136,6 @@ export class ChromiumProvider {
     ensureDir(cache);
     const exe = computeExecutablePath({ browser: Browser.CHROME, buildId, platform, cacheDir: cache });
     const fullExe = path.isAbsolute(exe) ? exe : path.join(cache, exe);
-
-    const tag = `chromium-${major}`;
-    const recordPath = path.join(cacheDir, `${tag}-${INSTALLED_FLAG}`);
-    const cached = await readManifest(recordPath);
-    if (cached) return cached;
 
     if (!existsSync(fullExe)) {
       // @puppeteer/browsers install() exposes no chunk-level progress callback,
@@ -177,6 +177,11 @@ export class ChromiumProvider {
     cacheDir: string,
     onProgress?: FetchProgressHandler,
   ): Promise<{ executablePath: string; buildLabel: string }> {
+    const tag = `chromium-${major}`;
+    const recordPath = path.join(cacheDir, `${tag}-${INSTALLED_FLAG}`);
+    const cached = await readManifest(recordPath);
+    if (cached) return cached;
+
     const curated = snapshotRevisionFor(major);
     if (!curated) {
       throw new HistoricalUnavailableError(
@@ -195,7 +200,7 @@ export class ChromiumProvider {
         // Geo-block / network failure: the whole bucket is unreachable from
         // here. No point probing nearby revisions — they'll fail identically.
         throw new HistoricalUnavailableError(
-          `Chromium snapshot bucket is unreachable (geo-blocked or network error) for Chrome ${major}; ` +
+          `(Use a VPN) Chromium snapshot downloads are unavailable in your location for Chrome ${major}; ` +
             `this version was not tested.`,
           'download-failed',
         );
@@ -222,11 +227,6 @@ export class ChromiumProvider {
     ensureDir(cache);
     const extractDir = path.join(cache, `chromium-${major}-${revision}`);
     const fullExe = path.join(extractDir, 'chrome-linux', 'chrome');
-
-    const tag = `chromium-${major}`;
-    const recordPath = path.join(cacheDir, `${tag}-${INSTALLED_FLAG}`);
-    const cached = await readManifest(recordPath);
-    if (cached) return cached;
 
     if (!existsSync(fullExe)) {
       const zipUrl =
