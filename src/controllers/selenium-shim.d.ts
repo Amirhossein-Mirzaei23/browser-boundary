@@ -77,7 +77,7 @@ declare module 'selenium-webdriver' {
   }
 }
 
-declare module 'selenium-webdriver/firefox' {
+declare module 'selenium-webdriver/firefox.js' {
   export class Options {
     setBinary(path: string): void;
     addArguments(...args: string[]): void;
@@ -85,14 +85,14 @@ declare module 'selenium-webdriver/firefox' {
   }
 }
 
-declare module 'selenium-webdriver/chrome' {
+declare module 'selenium-webdriver/chrome.js' {
   export class Options {
     setChromeBinaryPath(path: string): this;
     addArguments(...args: string[]): this;
   }
 }
 
-declare module 'selenium-webdriver/http' {
+declare module 'selenium-webdriver/http/index.js' {
   export class HttpClient {
     constructor(serverUrl: string);
   }
@@ -101,13 +101,13 @@ declare module 'selenium-webdriver/http' {
   }
 }
 
-declare module 'selenium-webdriver/lib/session' {
+declare module 'selenium-webdriver/lib/session.js' {
   export class Session {
     constructor(id: string, capabilities: unknown);
   }
 }
 
-declare module 'selenium-webdriver/lib/capabilities' {
+declare module 'selenium-webdriver/lib/capabilities.js' {
   export class Capabilities {
     constructor(other?: Record<string, unknown>);
   }

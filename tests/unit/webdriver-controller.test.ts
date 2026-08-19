@@ -1,6 +1,26 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { driverServerArgs, isLegacyChromeDriverVersion, legacyFontconfigXml, legacySessionPayload, normalizeWebDriverLogLevel } from '../../src/controllers/webdriver.js';
+
+test('WebDriver ESM subpath imports include the runtime .js extension', () => {
+  const source = readFileSync(new URL('../../src/controllers/webdriver.ts', import.meta.url), 'utf8');
+
+  for (const subpath of ['chrome', 'firefox', 'http/index', 'lib/session', 'lib/capabilities']) {
+    assert.ok(source.includes(`import('selenium-webdriver/${subpath}.js')`), `${subpath} import must end in .js`);
+    assert.ok(!source.includes(`import('selenium-webdriver/${subpath}')`), `${subpath} import must not be extensionless`);
+  }
+});
+
+test('Selenium HTTP module exposes constructible client and executor classes', async () => {
+  const http = await import('selenium-webdriver/http/index.js');
+
+  const client = new http.HttpClient('http://127.0.0.1:4444');
+  const executor = new http.Executor(client);
+
+  assert.equal(client.constructor.name, 'HttpClient');
+  assert.equal(executor.constructor.name, 'Executor');
+});
 
 test('ChromeDriver receives the equals-form port argument it accepts', () => {
   assert.deepEqual(driverServerArgs('chromium', 49190), ['--port=49190']);

@@ -10,6 +10,12 @@ export default defineConfig({
   treeshake: true,
   // Don't bundle peers/optionals; keep them external so they're resolved at
   // runtime. selenium-webdriver is dynamically imported only for historical
-  // Firefox probes and must NOT be required at bundle time.
-  external: ['playwright', '@playwright/test', '@puppeteer/browsers', 'selenium-webdriver', 'selenium-webdriver/firefox'],
+  // Chromium/Firefox probes and must NOT be required at bundle time.
+  external: [
+    'playwright',
+    '@playwright/test',
+    '@puppeteer/browsers',
+    'selenium-webdriver',
+    /^selenium-webdriver\//,
+  ],
 });
