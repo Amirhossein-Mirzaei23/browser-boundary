@@ -92,7 +92,7 @@ declare module 'selenium-webdriver/chrome.js' {
   }
 }
 
-declare module 'selenium-webdriver/lib/http.js' {
+declare module 'selenium-webdriver/http/index.js' {
   export class HttpClient {
     constructor(serverUrl: string);
   }

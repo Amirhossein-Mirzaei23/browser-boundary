@@ -468,7 +468,7 @@ async function createLegacyChromeDriverSession(
     throw new Error(body.value?.message ?? `legacy ChromeDriver session failed with HTTP ${response.status}`);
   }
 
-  const http = await import('selenium-webdriver/lib/http.js');
+  const http = await import('selenium-webdriver/http/index.js');
   const sessionModule = await import('selenium-webdriver/lib/session.js');
   const capabilitiesModule = await import('selenium-webdriver/lib/capabilities.js');
   const executor = new http.Executor(new http.HttpClient(baseUrl));
