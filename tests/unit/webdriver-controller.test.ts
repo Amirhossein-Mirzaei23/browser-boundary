@@ -1,6 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { driverServerArgs, isLegacyChromeDriverVersion, legacyFontconfigXml, legacySessionPayload, normalizeWebDriverLogLevel } from '../../src/controllers/webdriver.js';
+
+test('WebDriver ESM subpath imports include the runtime .js extension', () => {
+  const source = readFileSync(new URL('../../src/controllers/webdriver.ts', import.meta.url), 'utf8');
+
+  for (const subpath of ['chrome', 'firefox', 'lib/http', 'lib/session', 'lib/capabilities']) {
+    assert.ok(source.includes(`import('selenium-webdriver/${subpath}.js')`), `${subpath} import must end in .js`);
+    assert.ok(!source.includes(`import('selenium-webdriver/${subpath}')`), `${subpath} import must not be extensionless`);
+  }
+});
 
 test('ChromeDriver receives the equals-form port argument it accepts', () => {
   assert.deepEqual(driverServerArgs('chromium', 49190), ['--port=49190']);

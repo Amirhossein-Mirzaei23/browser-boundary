@@ -72,14 +72,14 @@ export class WebDriverController implements AutomationController {
     }
     let builder = new Builder().forBrowser(engine === 'chromium' ? 'chrome' : 'firefox');
     if (engine === 'chromium') {
-      const chrome = await import('selenium-webdriver/chrome');
+      const chrome = await import('selenium-webdriver/chrome.js');
       const options = new chrome.Options()
         .setChromeBinaryPath(binary.executablePath)
         .addArguments('--no-sandbox', '--disable-dev-shm-usage');
       if (!config.headed) options.addArguments('--headless');
       builder = builder.setChromeOptions(options);
     } else {
-      const firefox = await import('selenium-webdriver/firefox');
+      const firefox = await import('selenium-webdriver/firefox.js');
       const options = new firefox.Options();
       options.setBinary(binary.executablePath);
       if (!config.headed) options.addArguments('--headless');
@@ -468,9 +468,9 @@ async function createLegacyChromeDriverSession(
     throw new Error(body.value?.message ?? `legacy ChromeDriver session failed with HTTP ${response.status}`);
   }
 
-  const http = await import('selenium-webdriver/http');
-  const sessionModule = await import('selenium-webdriver/lib/session');
-  const capabilitiesModule = await import('selenium-webdriver/lib/capabilities');
+  const http = await import('selenium-webdriver/lib/http.js');
+  const sessionModule = await import('selenium-webdriver/lib/session.js');
+  const capabilitiesModule = await import('selenium-webdriver/lib/capabilities.js');
   const executor = new http.Executor(new http.HttpClient(baseUrl));
   const session = new sessionModule.Session(sessionId, new capabilitiesModule.Capabilities(body.value));
   return new sw.WebDriver(session, executor) as WebDriverLike;
