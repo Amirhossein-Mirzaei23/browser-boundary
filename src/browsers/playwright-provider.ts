@@ -54,6 +54,7 @@ export class PlaywrightProvider {
     const latestMajor = Number(latest.version);
     const isLatest = Number.isNaN(latestMajor) || Number.isNaN(requestedMajor) || requestedMajor >= latestMajor;
     return {
+      engine,
       executablePath: latest.executablePath,
       buildLabel: latest.buildLabel,
       versionType: latest.versionType,

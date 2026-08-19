@@ -24,12 +24,24 @@ export class PlaywrightController implements AutomationController {
   readonly kind = 'playwright' as const;
 
   async launch(binary: BrowserBinary, _config: ResolvedConfig): Promise<ControllerSession> {
-    const engine = engineForBinary(binary);
+    const engine = binary.engine ?? engineForBinary(binary);
     const browserType: BrowserType = playwrightBrowserType(engine);
     const browser = await launchReal(engine, browserType, binary, _config);
-    const context = await browser.newContext({ viewport: _config.viewport });
-    const page = await context.newPage();
-    return new PlaywrightSession(browser, context, page);
+    try {
+      const context = await browser.newContext({ viewport: _config.viewport });
+      const page = await context.newPage();
+      return new PlaywrightSession(browser, context, page);
+    } catch (err) {
+      await browser.close().catch(() => {});
+      const message = err instanceof Error ? err.message : String(err);
+      if (/Protocol error|wasn't found|Target page, context or browser has been closed/i.test(message)) {
+        throw new Error(
+          `Playwright is incompatible with ${binary.buildLabel}: ${message}. ` +
+            `Use --chromium-controller auto or webdriver for historical Chromium.`,
+        );
+      }
+      throw err;
+    }
   }
 }
 

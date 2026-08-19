@@ -11,7 +11,7 @@ import { scan } from '../src/index.js';
 const result = await scan({
   urls: [
     {
-      url: 'https://example.com',
+      url: 'https://your-app.test',
       label: 'home',
       readiness: async ({ page }) => {
         // Wait for the app's root + a data attribute set after hydration.

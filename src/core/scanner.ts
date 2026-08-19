@@ -120,7 +120,7 @@ export class BrowserCompatibilityScanner {
       validateExplicitVersionsAgainstLatest(engine, requestedVersions, latestMajor);
       log(
         `${cap(engine)}: testing requested major version${requestedVersions.length === 1 ? '' : 's'} ` +
-        `${requestedVersions.join(', ')} (valid range: ${engine === 'chromium' ? 60 : 52}–${latestMajor}).`,
+        `${requestedVersions.join(', ')} (valid range: ${engine === 'chromium' ? 67 : 52}–${latestMajor}).`,
       );
       if (cfg.headed) {
         log('Close the browser tab/window when finished; the next requested version will then open.');
@@ -230,7 +230,9 @@ export class BrowserCompatibilityScanner {
     // a verdict from e.g. Firefox 153 attributed to Firefox 52 is a lie.
     let binary;
     try {
-      binary = await this.provider.install(engine, version, this.config.cacheDir, onFetchProgress);
+      binary = await this.provider.install(engine, version, this.config.cacheDir, onFetchProgress, {
+        chromiumController: this.config.chromiumController,
+      });
     } catch (err) {
       // Tell the renderer to clear its in-place bar whether we got the binary
       // or not, so the INCONCLUSIVE line lands on a fresh line.

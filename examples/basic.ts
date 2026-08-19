@@ -1,12 +1,12 @@
 /**
- * Basic example: find the oldest browser version example.com can run on.
+ * Basic example: find the oldest browser version www.whatsmybrowser.org can run on.
  *
  *   npx tsx examples/basic.ts
  */
 import { scan } from '../src/index.js';
 
 const result = await scan({
-  urls: ['https://example.com'],
+  urls: ['https://www.whatsmybrowser.org/'],
   engines: ['chromium', 'firefox', 'webkit'],
   search: { strategy: 'binary', stepSize: 10 },
   output: { format: ['json', 'markdown'], directory: './reports-example' },

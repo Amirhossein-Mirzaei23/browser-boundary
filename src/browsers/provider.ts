@@ -1,5 +1,5 @@
 import type { EngineName } from '../reporting/types.js';
-import type { BrowserBinary, BrowserVersion } from './types.js';
+import type { BrowserBinary, BrowserInstallOptions, BrowserVersion } from './types.js';
 import type { BrowserProvider } from './types.js';
 import type { FetchProgressHandler } from './progress.js';
 import { ChromiumProvider } from './chromium-provider.js';
@@ -38,8 +38,9 @@ export class DefaultBrowserProvider implements BrowserProvider {
     version: string,
     cacheDir: string,
     onProgress?: FetchProgressHandler,
+    options?: BrowserInstallOptions,
   ): Promise<BrowserBinary> {
-    return this.for(engine).install(engine, version, cacheDir, onProgress);
+    return this.for(engine).install(engine, version, cacheDir, onProgress, options);
   }
 
   async getLatest(engine: EngineName): Promise<BrowserVersion> {

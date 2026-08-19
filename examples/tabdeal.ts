@@ -44,7 +44,7 @@ const result = await scan(
       { url: 'https://tabdeal.org/buy-btc', label: 'buy-btc', readiness: { selectors: BUY_BTC_SELECTORS, mode: 'any' } },
     ],
     engines: ['chromium', 'firefox', 'webkit'],
-    search: { strategy: 'binary', stepSize: 10, floor: { chromium: 60, firefox: 60, webkit: 13 } },
+    search: { strategy: 'binary', stepSize: 10, floor: { chromium: 67, firefox: 60, webkit: 13 } },
     network: { ignoredPatterns: IGNORED, criticalResourceTypes: ['script', 'stylesheet', 'xhr', 'fetch', 'font'] },
     timeout: 45_000,
     retries: 3,

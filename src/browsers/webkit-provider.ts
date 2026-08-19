@@ -28,6 +28,7 @@ export class WebKitProvider {
   ): Promise<BrowserBinary> {
     const latest = await this.getLatest(engine);
     return {
+      engine: 'webkit',
       executablePath: latest.executablePath,
       buildLabel: latest.buildLabel,
       versionType: 'playwright-revision',

@@ -2,6 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { EngineName } from '../reporting/types.js';
 import type {
+  ChromiumControllerPolicy,
   PageSpec,
   ResourceType,
   ScanConfig,
@@ -17,6 +18,7 @@ import { DEFAULTS } from './schema.js';
 export interface ResolvedConfig {
   pages: PageSpec[];
   engines: EngineName[];
+  chromiumController: ChromiumControllerPolicy;
   siteName: string;
   strategy: SearchStrategy;
   stepSize: number;
@@ -60,6 +62,7 @@ export interface ResolvedPage {
 export function resolveConfig(input: ScanConfig): ResolvedConfig {
   const engines = input.engines && input.engines.length ? input.engines : [...DEFAULTS.engines];
   validateEngines(engines);
+  validateChromiumController(input.chromiumController);
   validateExplicitConfig(input, engines);
 
   const pages: PageSpec[] = (input.urls ?? []).map((u, i) =>
@@ -95,6 +98,7 @@ export function resolveConfig(input: ScanConfig): ResolvedConfig {
   return {
     pages,
     engines,
+    chromiumController: input.chromiumController ?? DEFAULTS.chromiumController,
     siteName,
     strategy,
     stepSize: input.search?.stepSize ?? DEFAULTS.stepSize,
@@ -142,6 +146,14 @@ function validateEngines(engines: EngineName[]): void {
   if (invalid) throw new ConfigError(`Unknown engine "${invalid}". Valid engines: chromium, firefox, webkit.`);
 }
 
+function validateChromiumController(policy: ChromiumControllerPolicy | undefined): void {
+  if (policy && !['auto', 'playwright', 'webdriver'].includes(policy)) {
+    throw new ConfigError(
+      `Unknown Chromium controller "${policy}". Valid values: auto, playwright, webdriver.`,
+    );
+  }
+}
+
 function validateExplicitConfig(input: ScanConfig, engines: EngineName[]): void {
   if (input.search?.strategy !== 'explicit') return;
   if (engines.length !== 1) throw new ConfigError('Explicit version testing requires exactly one engine.');
@@ -157,7 +169,7 @@ function validateExplicitConfig(input: ScanConfig, engines: EngineName[]): void 
   if (engine === 'webkit') {
     throw new ConfigError('WebKit supports only its current Playwright build; specific versions cannot be tested.');
   }
-  const floor = engine === 'chromium' ? 60 : 52;
+  const floor = engine === 'chromium' ? 67 : 52;
   if (versions.some((version) => !/^\d+$/.test(version) || Number(version) < floor)) {
     throw new ConfigError(
       `${engine === 'chromium' ? 'Chromium' : 'Firefox'} versions must be whole major versions in the supported range ${floor}–current.`,
@@ -170,7 +182,7 @@ export function validateExplicitVersionsAgainstLatest(
   versions: string[],
   latestMajor: number,
 ): void {
-  const floor = engine === 'chromium' ? 60 : engine === 'firefox' ? 52 : latestMajor;
+  const floor = engine === 'chromium' ? 67 : engine === 'firefox' ? 52 : latestMajor;
   const invalid = versions.filter((version) => Number(version) < floor || Number(version) > latestMajor);
   if (invalid.length) {
     const label = engine === 'chromium' ? 'Chromium' : engine === 'firefox' ? 'Firefox' : 'WebKit';

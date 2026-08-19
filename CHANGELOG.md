@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.5.0] - 2026-08-19
+
+### Added
+- Chromium 67 is now the documented and enforced historical support floor.
+- Quick-start examples use `https://www.whatsmybrowser.org/` so browser identity
+  can be checked visually during test runs.
+- `--chromium-controller auto|playwright|webdriver`; `auto` drives historical
+  Chromium snapshots with a ChromeDriver from the same snapshot revision.
+- Chromium 67–74 can use audited legacy ChromeDriver releases and JSON Wire
+  sessions when a same-revision snapshot driver is unavailable.
+- Runtime-major validation for historical Chromium binaries and matching-driver
+  manifests, including offline cache reuse with zero remote probes.
+
+### Fixed
+- Exact requests newer than the installed current Chromium are now inconclusive
+  instead of running the current binary under a future version label.
+- Historical Chromium milestone mappings now use published Puppeteer release/npm
+  pins; unverified gaps remain unavailable instead of using interpolated revisions.
+- Cached ChromeDriver binaries are version-validated before offline reuse, and
+  Chromium performance logs feed critical network failures into scan signals.
+- ChromeDriver receives its required `--port=<number>` syntax, and pre-75
+  drivers receive legacy capabilities instead of incompatible W3C-only payloads.
+- Legacy Chromium receives a backward-compatible Fontconfig file and a bounded
+  session-startup watchdog, preventing font crashes from hanging scans forever.
+- Playwright protocol failures on old Chromium now close partially launched
+  browsers and recommend the WebDriver controller instead of leaking a process.
+
 ## [1.4.3] - 2026-08-18
 
 ### Changed

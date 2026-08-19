@@ -6,15 +6,14 @@ import {
   listAvailableRevisions,
   snapshotRevisionExists,
   probeSnapshotRevision,
-  SNAPSHOT_MILESTONE_MAX,
-  SNAPSHOT_MILESTONE_MIN,
+  probeSnapshotDriverRevision,
 } from '../../src/browsers/chromium-snapshots.js';
 
-test('snapshotRevisionFor returns a numeric revision for majors in range', () => {
-  for (const major of [60, 70, 80, 90, 100, 112]) {
+test('snapshotRevisionFor returns a numeric revision for verified legacy milestones', () => {
+  for (const major of [62, 80, 83, 85, 93, 97, 112]) {
     const rev = snapshotRevisionFor(major);
     assert.equal(typeof rev, 'number', `major ${major} must map to a number`);
-    assert.ok(rev! > 400000 && rev! < 1100000, `major ${major} revision ${rev} looks implausible`);
+    assert.ok(rev! > 400000 && rev! < 1200000, `major ${major} revision ${rev} looks implausible`);
   }
 });
 
@@ -29,23 +28,24 @@ test('snapshotRevisionFor returns null below the supported floor', () => {
 });
 
 test('snapshot revision is deterministic (stable across calls)', () => {
-  assert.equal(snapshotRevisionFor(80), snapshotRevisionFor(80));
+  assert.equal(snapshotRevisionFor(83), snapshotRevisionFor(83));
 });
 
-test('every major 60..112 has a curated revision except documented skipped milestones', () => {
-  // Chrome 82 was never released (cancelled due to COVID, March 2020 — Chrome
-  // jumped 81 → 83). It has no binary on any source, so it's a legitimate gap.
-  const SKIPPED_MILESTONES = new Set([82]);
-  const missing: number[] = [];
-  for (let m = SNAPSHOT_MILESTONE_MIN; m <= SNAPSHOT_MILESTONE_MAX; m++) {
-    if (SKIPPED_MILESTONES.has(m)) continue;
-    if (snapshotRevisionFor(m) === null) missing.push(m);
+test('snapshotRevisionFor maps representative milestones to verified Chromium revisions', () => {
+  const verified = new Map([
+    [83, 756035],
+    [85, 782078],
+  ]);
+
+  for (const [major, revision] of verified) {
+    assert.equal(snapshotRevisionFor(major), revision, `Chromium ${major} must resolve to r${revision}`);
   }
-  assert.deepEqual(
-    missing,
-    [],
-    `these majors lack a curated snapshot revision (add them or document as skipped): ${missing.join(',')}`,
-  );
+});
+
+test('milestones without a trustworthy Puppeteer pin return null', () => {
+  for (const major of [60, 61, 82, 94, 95, 96]) {
+    assert.equal(snapshotRevisionFor(major), null);
+  }
 });
 
 test('documented skipped milestones (Chrome 82) return null', () => {
@@ -99,6 +99,20 @@ test('probeSnapshotRevision distinguishes ok / pruned / unreachable', async () =
     assert.equal(await probeSnapshotRevision(1014682), 'ok');
     assert.equal(await probeSnapshotRevision(1014680), 'pruned');
     assert.equal(await probeSnapshotRevision(1014686), 'unreachable');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('probeSnapshotDriverRevision checks the matching snapshot ChromeDriver artifact', async () => {
+  let requestedUrl = '';
+  globalThis.fetch = (async (input: string | URL) => {
+    requestedUrl = String(input);
+    return new Response(null, { status: 200 });
+  }) as FetchImpl;
+  try {
+    assert.equal(await probeSnapshotDriverRevision(756035), 'ok');
+    assert.match(requestedUrl, /Linux_x64\/756035\/chromedriver_linux64\.zip$/);
   } finally {
     globalThis.fetch = originalFetch;
   }

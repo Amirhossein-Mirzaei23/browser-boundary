@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { chmodSync, mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { ChromiumProvider } from '../../src/browsers/chromium-provider.js';
 import { HistoricalUnavailableError } from '../../src/browsers/types.js';
@@ -13,6 +13,18 @@ import { HistoricalUnavailableError } from '../../src/browsers/types.js';
  */
 type FetchImpl = typeof fetch;
 const originalFetch: FetchImpl = globalThis.fetch;
+
+function writeFakeChromium(executablePath: string, major: number): void {
+  mkdirSync(path.dirname(executablePath), { recursive: true });
+  writeFileSync(executablePath, `#!/bin/sh\necho 'Chromium ${major}.0.0.0'\n`);
+  chmodSync(executablePath, 0o755);
+}
+
+function writeFakeDriver(executablePath: string, major: number): void {
+  mkdirSync(path.dirname(executablePath), { recursive: true });
+  writeFileSync(executablePath, `#!/bin/sh\necho 'ChromeDriver ${major}.0.0.0'\n`);
+  chmodSync(executablePath, 0o755);
+}
 
 function stubFetch(headStatus: Record<number, number>): void {
   globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
@@ -81,11 +93,12 @@ test('REGRESSION: ChromiumProvider.install uses a cached historical binary witho
   };
   const cache = mkdtempSync(path.join(tmpdir(), 'mrz-chromium-cached-'));
   const exe = path.join(cache, 'snapshots', 'chromium-89-776874', 'chrome-linux', 'chrome');
-  mkdirSync(path.dirname(exe), { recursive: true });
-  writeFileSync(exe, '');
+  const driver = path.join(cache, 'snapshots', 'chromium-89-776874', 'chromedriver', 'chromedriver');
+  writeFakeChromium(exe, 89);
+  writeFakeDriver(driver, 89);
   writeFileSync(
     path.join(cache, 'chromium-89-mrz-installed.json'),
-    JSON.stringify({ executablePath: exe, buildLabel: 'Chromium 89 (snapshot r776874)' }),
+    JSON.stringify({ executablePath: exe, driverPath: driver, buildLabel: 'Chromium 89 (snapshot r776874)' }),
   );
 
   let fetchCalls = 0;
@@ -98,7 +111,82 @@ test('REGRESSION: ChromiumProvider.install uses a cached historical binary witho
     assert.equal(binary.executablePath, exe);
     assert.equal(binary.buildLabel, 'Chromium 89 (snapshot r776874)');
     assert.equal(binary.isPlaywrightBuild, false);
+    assert.equal(binary.driverPath, driver);
     assert.equal(fetchCalls, 0, 'a valid cache hit must not require snapshot-bucket access');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('ChromiumProvider rejects a cached ChromeDriver whose major differs from the browser', async () => {
+  const c = new ChromiumProvider();
+  (c as unknown as { playwright: { getLatest: () => Promise<unknown> } }).playwright = {
+    getLatest: async () => ({ version: '999', executablePath: '/x', buildLabel: 'Chrome 999', versionType: 'real-major' }),
+  };
+  const cache = mkdtempSync(path.join(tmpdir(), 'mrz-chromium-driver-mismatch-'));
+  const exe = path.join(cache, 'snapshots', 'chromium-83-756035', 'chrome-linux', 'chrome');
+  const driver = path.join(cache, 'snapshots', 'chromium-83-756035', 'chromedriver', 'chromedriver');
+  writeFakeChromium(exe, 83);
+  writeFakeDriver(driver, 80);
+  writeFileSync(
+    path.join(cache, 'chromium-83-mrz-installed.json'),
+    JSON.stringify({ executablePath: exe, buildLabel: 'Chromium 83 (snapshot r756035)', driverPath: driver }),
+  );
+  globalThis.fetch = (async () => new Response(null, { status: 403 })) as FetchImpl;
+  try {
+    await assert.rejects(
+      () => c.install('chromium', '83', cache),
+      (err: unknown) => err instanceof HistoricalUnavailableError && /snapshot downloads are unavailable/i.test(err.message),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('ChromiumProvider accepts a same-major snapshot ChromeDriver when a legacy fallback also exists', async () => {
+  const c = new ChromiumProvider();
+  (c as unknown as { playwright: { getLatest: () => Promise<unknown> } }).playwright = {
+    getLatest: async () => ({ version: '999', executablePath: '/x', buildLabel: 'Chrome 999', versionType: 'real-major' }),
+  };
+  const cache = mkdtempSync(path.join(tmpdir(), 'mrz-chromium-driver-74-'));
+  const exe = path.join(cache, 'snapshots', 'chromium-74-637110', 'chrome-linux', 'chrome');
+  const driver = path.join(cache, 'snapshots', 'chromium-74-637110', 'chromedriver', 'chromedriver_linux64', 'chromedriver');
+  writeFakeChromium(exe, 74);
+  writeFakeDriver(driver, 74);
+  writeFileSync(
+    path.join(cache, 'chromium-74-mrz-installed.json'),
+    JSON.stringify({ executablePath: exe, buildLabel: 'Chromium 74 (snapshot r637110)', driverPath: driver }),
+  );
+  const binary = await c.install('chromium', '74', cache);
+  assert.equal(binary.driverPath, driver);
+});
+
+test('ChromiumProvider ignores a cached binary whose runtime major differs and attempts reacquisition', async () => {
+  const c = new ChromiumProvider();
+  (c as unknown as { playwright: { getLatest: () => Promise<unknown> } }).playwright = {
+    getLatest: async () => ({ version: '999', executablePath: '/x', buildLabel: 'Chrome 999', versionType: 'real-major' }),
+  };
+  const cache = mkdtempSync(path.join(tmpdir(), 'mrz-chromium-mismatch-'));
+  const exe = path.join(cache, 'snapshots', 'chromium-83-711873', 'chrome-linux', 'chrome');
+  writeFakeChromium(exe, 80);
+  writeFileSync(
+    path.join(cache, 'chromium-83-mrz-installed.json'),
+    JSON.stringify({ executablePath: exe, buildLabel: 'Chromium 83 (snapshot r711873)' }),
+  );
+
+  let fetchCalls = 0;
+  globalThis.fetch = (async () => {
+    fetchCalls++;
+    return new Response(null, { status: 403 });
+  }) as FetchImpl;
+  try {
+    await assert.rejects(
+      () => c.install('chromium', '83', cache),
+      (err: unknown) =>
+        err instanceof HistoricalUnavailableError &&
+        /snapshot downloads are unavailable/i.test(err.message),
+    );
+    assert.equal(fetchCalls, 1, 'invalid cache must be bypassed so the corrected revision can be acquired');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -124,12 +212,98 @@ test('REGRESSION: majors below CFT existence floor route to the snapshot source,
   };
   const cache = mkdtempSync(path.join(tmpdir(), 'mrz-chromium-route-'));
 
-  const binary = await c.install('chromium', '111', cache);
+  const binary = await c.install('chromium', '111', cache, undefined, { chromiumController: 'playwright' });
   assert.equal(snapCalled, true, 'major 111 must use the snapshot path');
   assert.equal(cftCalled, false, 'major 111 must NOT use the CFT path');
   assert.equal(binary.buildLabel, 'Chromium 111 (snapshot)');
   assert.equal(binary.controller, 'playwright');
   assert.equal(binary.isPlaywrightBuild, false);
+});
+
+test('ChromiumProvider auto policy selects WebDriver for a historical snapshot', async () => {
+  const c = new ChromiumProvider();
+  (c as unknown as { playwright: { getLatest: () => Promise<unknown> } }).playwright = {
+    getLatest: async () => ({ version: '999', executablePath: '/x', buildLabel: 'Chrome 999', versionType: 'real-major' }),
+  };
+  (c as unknown as { downloadChromiumSnapshot: () => Promise<{ executablePath: string; buildLabel: string; driverPath: string }> }).downloadChromiumSnapshot = async () => ({
+    executablePath: '/fake/chromium',
+    buildLabel: 'Chromium 83 (snapshot r756035)',
+    driverPath: '/fake/chromedriver',
+  });
+
+  const binary = await c.install('chromium', '83', '/cache', undefined, { chromiumController: 'auto' });
+  assert.equal(binary.controller, 'webdriver');
+  assert.equal(binary.driverPath, '/fake/chromedriver');
+});
+
+test('ChromiumProvider playwright policy keeps historical snapshots on Playwright', async () => {
+  const c = new ChromiumProvider();
+  (c as unknown as { playwright: { getLatest: () => Promise<unknown> } }).playwright = {
+    getLatest: async () => ({ version: '999', executablePath: '/x', buildLabel: 'Chrome 999', versionType: 'real-major' }),
+  };
+  (c as unknown as { downloadChromiumSnapshot: () => Promise<{ executablePath: string; buildLabel: string }> }).downloadChromiumSnapshot = async () => ({
+    executablePath: '/fake/chromium',
+    buildLabel: 'Chromium 83 (snapshot r756035)',
+  });
+
+  const binary = await c.install('chromium', '83', '/cache', undefined, { chromiumController: 'playwright' });
+  assert.equal(binary.controller, 'playwright');
+  assert.equal(binary.driverPath, undefined);
+});
+
+test('ChromiumProvider auto policy rejects a historical snapshot without a matching driver', async () => {
+  const c = new ChromiumProvider();
+  (c as unknown as { playwright: { getLatest: () => Promise<unknown> } }).playwright = {
+    getLatest: async () => ({ version: '999', executablePath: '/x', buildLabel: 'Chrome 999', versionType: 'real-major' }),
+  };
+  (c as unknown as { downloadChromiumSnapshot: () => Promise<{ executablePath: string; buildLabel: string }> }).downloadChromiumSnapshot = async () => ({
+    executablePath: '/fake/chromium',
+    buildLabel: 'Chromium 83 (snapshot r756035)',
+  });
+
+  await assert.rejects(
+    () => c.install('chromium', '83', '/cache', undefined, { chromiumController: 'auto' }),
+    (err: unknown) => err instanceof HistoricalUnavailableError && /matching ChromeDriver/i.test(err.message),
+  );
+});
+
+test('ChromiumProvider auto policy keeps Chrome-for-Testing builds on Playwright', async () => {
+  const c = new ChromiumProvider();
+  (c as unknown as { playwright: { getLatest: () => Promise<unknown> } }).playwright = {
+    getLatest: async () => ({ version: '999', executablePath: '/x', buildLabel: 'Chrome 999', versionType: 'real-major' }),
+  };
+  (c as unknown as { downloadChromiumForTesting: () => Promise<{ executablePath: string; buildLabel: string }> }).downloadChromiumForTesting = async () => ({
+    executablePath: '/fake/chrome-for-testing',
+    buildLabel: 'Chrome for Testing 120.0.0.0',
+  });
+
+  const binary = await c.install('chromium', '120', '/cache', undefined, { chromiumController: 'auto' });
+  assert.equal(binary.controller, 'playwright');
+  assert.equal(binary.driverPath, undefined);
+});
+
+test('ChromiumProvider rejects a requested major newer than the installed current browser', async () => {
+  const c = new ChromiumProvider();
+  (c as unknown as { playwright: { getLatest: () => Promise<unknown> } }).playwright = {
+    getLatest: async () => ({ version: '151', executablePath: '/current', buildLabel: 'Chrome 151', versionType: 'real-major' }),
+  };
+  await assert.rejects(
+    () => c.install('chromium', '999', '/cache'),
+    (err: unknown) => err instanceof HistoricalUnavailableError && /newer than available Chromium 151/i.test(err.message),
+  );
+});
+
+test('ChromiumProvider rejects forced WebDriver outside the snapshot path', async () => {
+  const c = new ChromiumProvider();
+  (c as unknown as { playwright: { getLatest: () => Promise<unknown> } }).playwright = {
+    getLatest: async () => ({ version: '151', executablePath: '/current', buildLabel: 'Chrome 151', versionType: 'real-major' }),
+  };
+  for (const version of ['151', '120']) {
+    await assert.rejects(
+      () => c.install('chromium', version, '/cache', undefined, { chromiumController: 'webdriver' }),
+      (err: unknown) => err instanceof HistoricalUnavailableError && /only supported for snapshot-era Chromium/i.test(err.message),
+    );
+  }
 });
 
 test('REGRESSION: a major with no curated snapshot revision throws HistoricalUnavailableError', async () => {
@@ -163,18 +337,17 @@ test('REGRESSION: a major with no curated snapshot revision throws HistoricalUna
 
 test('downloadChromiumSnapshot uses the curated revision when it still exists (no fallback)', async () => {
   const c = new ChromiumProvider();
-  // Curated revision 1014680 (Chrome 111) is present in the bucket.
-  stubFetch({ 1014680: 200 });
+  // Curated revision 756035 (Chrome 83) is present in the bucket.
+  stubFetch({ 756035: 200 });
   try {
     const cache = mkdtempSync(path.join(tmpdir(), 'mrz-chromium-curated-'));
     // Pre-create the executable at the curated revision's path so the download
     // branch is skipped — we are testing revision SELECTION, not extraction.
-    const exe = path.join(cache, 'snapshots', 'chromium-111-1014680', 'chrome-linux', 'chrome');
-    mkdirSync(path.dirname(exe), { recursive: true });
-    writeFileSync(exe, '');
+    const exe = path.join(cache, 'snapshots', 'chromium-83-756035', 'chrome-linux', 'chrome');
+    writeFakeChromium(exe, 83);
 
-    const result = await (c as unknown as { downloadChromiumSnapshot: (m: number, d: string) => Promise<{ buildLabel: string }> }).downloadChromiumSnapshot(111, cache);
-    assert.match(result.buildLabel, /r1014680/);
+    const result = await (c as unknown as { downloadChromiumSnapshot: (m: number, d: string) => Promise<{ buildLabel: string }> }).downloadChromiumSnapshot(83, cache);
+    assert.match(result.buildLabel, /r756035/);
     assert.doesNotMatch(result.buildLabel, /nearest/, 'curated build label must not mention "nearest"');
   } finally {
     globalThis.fetch = originalFetch;
@@ -183,18 +356,17 @@ test('downloadChromiumSnapshot uses the curated revision when it still exists (n
 
 test('downloadChromiumSnapshot falls back to the nearest available revision when curated is pruned', async () => {
   const c = new ChromiumProvider();
-  // Curated 1014680 is pruned (404); r+2=1014682 is the first present revision.
-  stubFetch({ 1014682: 200 });
+  // Curated 756035 is pruned (404); r+2=756037 is the first present revision.
+  stubFetch({ 756037: 200 });
   try {
     const cache = mkdtempSync(path.join(tmpdir(), 'mrz-chromium-fallback-'));
     // Pre-create the executable at the FALLBACK revision's path.
-    const exe = path.join(cache, 'snapshots', 'chromium-111-1014682', 'chrome-linux', 'chrome');
-    mkdirSync(path.dirname(exe), { recursive: true });
-    writeFileSync(exe, '');
+    const exe = path.join(cache, 'snapshots', 'chromium-83-756037', 'chrome-linux', 'chrome');
+    writeFakeChromium(exe, 83);
 
-    const result = await (c as unknown as { downloadChromiumSnapshot: (m: number, d: string) => Promise<{ buildLabel: string }> }).downloadChromiumSnapshot(111, cache);
-    assert.match(result.buildLabel, /r1014682/);
-    assert.match(result.buildLabel, /nearest to curated r1014680/, 'must honestly report it is a fallback');
+    const result = await (c as unknown as { downloadChromiumSnapshot: (m: number, d: string) => Promise<{ buildLabel: string }> }).downloadChromiumSnapshot(83, cache);
+    assert.match(result.buildLabel, /r756037/);
+    assert.match(result.buildLabel, /nearest to curated r756035/, 'must honestly report it is a fallback');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -207,7 +379,7 @@ test('downloadChromiumSnapshot throws HistoricalUnavailableError when no nearby 
   try {
     const cache = mkdtempSync(path.join(tmpdir(), 'mrz-chromium-nofallback-'));
     await assert.rejects(
-      () => (c as unknown as { downloadChromiumSnapshot: (m: number, d: string) => Promise<unknown> }).downloadChromiumSnapshot(111, cache),
+      () => (c as unknown as { downloadChromiumSnapshot: (m: number, d: string) => Promise<unknown> }).downloadChromiumSnapshot(83, cache),
       (err: unknown) => {
         assert.ok(err instanceof HistoricalUnavailableError);
         assert.equal((err as HistoricalUnavailableError).code, 'download-failed');
@@ -224,7 +396,7 @@ test('downloadChromiumSnapshot throws HistoricalUnavailableError when no nearby 
 test('downloadChromiumSnapshot throws HistoricalUnavailableError immediately on geo-block (no probing)', async () => {
   const c = new ChromiumProvider();
   // The bucket returns 403 for every probe — a geo-block.
-  stubFetch({ 1014680: 403 });
+  stubFetch({ 756035: 403 });
   let headCalls = 0;
   const wrapped = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
@@ -234,13 +406,13 @@ test('downloadChromiumSnapshot throws HistoricalUnavailableError immediately on 
   try {
     const cache = mkdtempSync(path.join(tmpdir(), 'mrz-chromium-geoblock-'));
     await assert.rejects(
-      () => (c as unknown as { downloadChromiumSnapshot: (m: number, d: string) => Promise<unknown> }).downloadChromiumSnapshot(111, cache),
+      () => (c as unknown as { downloadChromiumSnapshot: (m: number, d: string) => Promise<unknown> }).downloadChromiumSnapshot(83, cache),
       (err: unknown) => {
         assert.ok(err instanceof HistoricalUnavailableError);
         assert.equal((err as HistoricalUnavailableError).code, 'download-failed');
         assert.match(
           (err as Error).message,
-          /^\(Use a VPN\) Chromium snapshot downloads are unavailable in your location/,
+          /^\(Use a VPN only for first time download/,
         );
         return true;
       },

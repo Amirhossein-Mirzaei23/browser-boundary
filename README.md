@@ -33,7 +33,7 @@ Versions the scanner could not test remain inconclusive. They are never silently
 | Aspect | browser-boundary |
 | --- | --- |
 | Browser identity | Launches the real binary; never changes only the User-Agent |
-| Historical testing | Tests Chromium 60 to current and Firefox 52 to current |
+| Historical testing | Tests Chromium 67 to current and Firefox 52 to current |
 | Search speed | Steps through releases, then binary-searches the pass/fail gap |
 | Failure signals | Navigation, JavaScript, console, network, rendering, and app readiness |
 | Evidence | JSON and Markdown reports, screenshots, traces, and logs |
@@ -49,7 +49,7 @@ Browserslist and Can I Use answer a different question. They use declared target
 
 | Engine | Coverage | Automation |
 | --- | --- | --- |
-| Chromium | Major 60 to current | Playwright/CDP with Chromium snapshots and Chrome for Testing |
+| Chromium | Major 67 to current | WebDriver for historical Chromium snapshots; Playwright for current Chrome for Testing |
 | Firefox | Major 52 to current | geckodriver/WebDriver with builds from archive.mozilla.org |
 | WebKit | Current Playwright build | Playwright |
 
@@ -73,7 +73,7 @@ If you do not want a global install, use `npx` instead:
 
 ```bash
 npx browser-boundary install
-npx browser-boundary https://example.com
+npx browser-boundary https://www.whatsmybrowser.org/
 ```
 
 For CI/CD or projects that need pinned dependency versions, install locally as development dependencies:
@@ -97,15 +97,24 @@ npm install --save-dev @puppeteer/browsers selenium-webdriver
 ### 2. Scan a site
 
 ```bash
-browser-boundary https://example.com
+browser-boundary https://www.whatsmybrowser.org/
 ```
 
-With the alternative non-global workflow, prefix the command with `npx`: `npx browser-boundary https://example.com`.
+With the alternative non-global workflow, prefix the command with `npx`: `npx browser-boundary https://www.whatsmybrowser.org/`.
+
+For a quick historical Chromium check that visibly reports the detected browser,
+run the oldest supported Chromium major:
+
+```bash
+browser-boundary https://www.whatsmybrowser.org/ \
+  --engines chromium \
+  --versions 67
+```
 
 Browser windows are visible by default, making it easy to watch each test. Hide them in CI or automated runs:
 
 ```bash
-browser-boundary https://example.com --headless
+browser-boundary https://www.whatsmybrowser.org/ --headless
 ```
 
 The default scan checks Chromium, Firefox, and WebKit and writes its results to `./reports`.
@@ -140,7 +149,7 @@ The generated `compatibility.md` records the same boundary with the evidence att
 - verified PASS >= 109; verified FAIL at 108
 ```
 
-These values are examples, not claims about `example.com`. Your results depend on the target pages, enabled checks, available binaries, and host environment.
+These values are illustrative, not claims about `www.whatsmybrowser.org`. Your results depend on the target pages, enabled checks, available binaries, and host environment.
 
 <!-- TODO: add terminal recording/screenshot -->
 
@@ -155,33 +164,46 @@ browser-boundary https://www.whatsmybrowser.org/ --engines chromium
 ### Pick browser engines
 
 ```bash
-browser-boundary https://example.com --engines chromium,firefox
+browser-boundary https://www.whatsmybrowser.org/ --engines chromium,firefox
 ```
 
 ### Run a fast current-browser check
 
 ```bash
-browser-boundary https://example.com --strategy latest --headless
+browser-boundary https://www.whatsmybrowser.org/ --strategy latest --headless
 ```
 
 `--latest-only` is a shortcut for the same search mode:
 
 ```bash
-browser-boundary https://example.com --latest-only --headless
+browser-boundary https://www.whatsmybrowser.org/ --latest-only --headless
 ```
 
 ### Test exact browser majors
 
 ```bash
-browser-boundary https://example.com \
+browser-boundary https://www.whatsmybrowser.org/ \
   --engines chromium \
   --versions 120,115,110
 ```
 
+Historical Chromium snapshots use a matching snapshot ChromeDriver by default:
+
+```bash
+browser-boundary https://www.whatsmybrowser.org/ --engines chromium --versions 83 \
+  --chromium-controller auto
+```
+
+Use `--chromium-controller playwright` only for diagnosis; modern Playwright may
+send CDP commands that old Chromium does not implement. `webdriver` forces the
+matching-driver path for snapshot-era Chromium (60–112) and is rejected for
+current/Chrome-for-Testing builds. The launched browser's runtime major is
+verified before a result is attributed to the requested version.
+
 Use `--exact-version` when you need only one:
 
 ```bash
-browser-boundary https://example.com \
+browser-boundary https://www.whatsmybrowser.org/ \
   --engines firefox \
   --exact-version 115
 ```
@@ -189,7 +211,7 @@ browser-boundary https://example.com \
 Exact-version mode has a few deliberate constraints:
 
 - choose exactly one engine;
-- use Chromium 60 to current or Firefox 52 to current;
+- use Chromium 67 to current or Firefox 52 to current;
 - provide one URL only;
 - versions run sequentially in the order given;
 - in headed mode, each browser stays open until you close it.
@@ -199,9 +221,9 @@ WebKit does not support exact historical versions.
 ### Scan several routes
 
 ```bash
-browser-boundary https://example.com \
+browser-boundary https://www.whatsmybrowser.org/ \
   --pages /,/login,/dashboard \
-  --base-url https://example.com
+  --base-url https://www.whatsmybrowser.org/
 ```
 
 The positional URL is included in the scan. `--pages` accepts relative paths and full URLs.
@@ -211,7 +233,7 @@ The positional URL is included in the scan. `--pages` accepts relative paths and
 A page loading is not always the same as an app being ready. Require one or more CSS selectors before the scan passes:
 
 ```bash
-browser-boundary https://example.com \
+browser-boundary https://www.whatsmybrowser.org/ \
   --readiness-selector '#app' \
   --readiness-selector '[data-hydrated]' \
   --readiness-mode all
@@ -222,7 +244,7 @@ browser-boundary https://example.com \
 ### Choose report formats and location
 
 ```bash
-browser-boundary https://example.com \
+browser-boundary https://www.whatsmybrowser.org/ \
   --format json,markdown \
   --output ./browser-reports
 ```
@@ -310,6 +332,7 @@ browser-boundary <url> [options]
 | `--exact-version <major>` | Alias for one exact major version. |
 | `--latest-only` | Test current builds only. |
 | `--headless` | Hide browser windows. Browsers are headed by default. |
+| `--chromium-controller <mode>` | `auto`, `playwright`, or `webdriver`. Default: `auto`; historical snapshots use matching ChromeDriver. |
 | `--step-size <number>` | Major-version interval before binary search. Default: `10`. |
 | `--timeout <ms>` | Per-page navigation/readiness timeout. Default: `30000`. |
 | `--wait-until <event>` | `domcontentloaded` or `load`. Default: `domcontentloaded`. |
@@ -347,9 +370,9 @@ import { scan, writeJson, writeMarkdown } from 'browser-boundary';
 const result = await scan(
   {
     urls: [
-      'https://example.com',
+      'https://www.whatsmybrowser.org/',
       {
-        url: 'https://example.com/dashboard',
+        url: 'https://your-app.test/dashboard',
         label: 'dashboard',
         readiness: {
           selectors: ['#app', '[data-hydrated]'],
@@ -393,7 +416,7 @@ import { scan } from 'browser-boundary';
 const result = await scan({
   urls: [
     {
-      url: 'https://example.com/dashboard',
+      url: 'https://your-app.test/dashboard',
       readiness: async ({ page }) => {
         await page.waitForSelector('[data-dashboard-ready]');
         return true;
@@ -411,7 +434,7 @@ const result = await scan({
 import { scan } from 'browser-boundary';
 
 const result = await scan({
-  urls: ['https://example.com'],
+  urls: ['https://www.whatsmybrowser.org/'],
   engines: ['chromium'],
   search: {
     strategy: 'explicit',
@@ -504,6 +527,22 @@ Try these in order:
 
 Chromium already receives `--no-sandbox` and `--disable-dev-shm-usage`. Firefox historical builds use geckodriver and may have different library requirements. There is no single modern Linux image that can reliably launch every historical release.
 
+Chromium snapshot scans download both `chrome-linux.zip` and the matching
+`chromedriver_linux64.zip` on the first successful run. Later runs reuse a
+validated manifest without contacting the bucket. Old manifests whose binary
+reports a different major are ignored rather than producing a mislabeled result.
+
+For Chromium 62–74, snapshot revisions may not publish a usable same-revision
+driver. In that range browser-boundary falls back to an audited legacy
+ChromeDriver compatibility matrix and uses the legacy JSON Wire session format
+required by pre-75 drivers. A minimal legacy Fontconfig file is also supplied so
+old Chromium can use installed fonts without parsing newer Fontconfig syntax.
+The official archive is tried first; the npm mirror
+is used when Google storage is geo-blocked. Some very old Chromium binaries may
+still require obsolete host libraries such as `libgconf-2.so.4`; those versions
+remain inconclusive on modern hosts unless run in a compatible older container
+or VM.
+
 ### What should I do when many versions are inconclusive?
 
 Read each result's `reason` in `compatibility.json` and check `reports/artifacts/` before changing the search range. A cluster of download or launch errors usually points to the runner; repeated navigation stalls may point to DNS, TLS, authentication, a WAF, or an unavailable test environment.
@@ -540,6 +579,7 @@ No. It finds verified boundaries on the engines and host environments it can lau
 ## Limitations
 
 - Historical browser archives are incomplete. Missing versions remain inconclusive.
+- Chromium snapshot and matching-driver archives are best-effort; missing, pruned, or geo-blocked artifacts remain inconclusive.
 - Old binaries may not start on modern Linux because of sandbox, ABI, or system-library differences.
 - Firefox below 52 cannot be driven through the supported geckodriver path.
 - WebKit is current-only and does not map to a Safari major version.
