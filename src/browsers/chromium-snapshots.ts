@@ -27,7 +27,7 @@
  * Returns null for majors with no curated entry (e.g. ≥113, which use CFT).
  */
 export function snapshotRevisionFor(major: number): number | null {
-  return MILESTONE_REVISIONS[major] ?? null;
+  return VERIFIED_MILESTONE_REVISIONS[major] ?? null;
 }
 
 /** Storage base for the continuous snapshot bucket (Google Cloud Storage). */
@@ -61,7 +61,23 @@ export async function probeSnapshotRevision(
   revision: number,
   folder: string = SNAPSHOT_LINUX_FOLDER,
 ): Promise<SnapshotProbeResult> {
-  const url = `https://storage.googleapis.com/${SNAPSHOT_BUCKET}/${folder}/${revision}/chrome-linux.zip`;
+  return probeSnapshotArtifact(revision, 'chrome-linux.zip', folder);
+}
+
+/** Probe the ChromeDriver archive paired with a Chromium snapshot revision. */
+export async function probeSnapshotDriverRevision(
+  revision: number,
+  folder: string = SNAPSHOT_LINUX_FOLDER,
+): Promise<SnapshotProbeResult> {
+  return probeSnapshotArtifact(revision, 'chromedriver_linux64.zip', folder);
+}
+
+async function probeSnapshotArtifact(
+  revision: number,
+  artifact: 'chrome-linux.zip' | 'chromedriver_linux64.zip',
+  folder: string,
+): Promise<SnapshotProbeResult> {
+  const url = `https://storage.googleapis.com/${SNAPSHOT_BUCKET}/${folder}/${revision}/${artifact}`;
   try {
     const res = await fetch(url, { method: 'HEAD' });
     if (res.ok) return 'ok';
@@ -172,57 +188,54 @@ export const SNAPSHOT_MILESTONE_MIN = 60;
 
 // Provenance: each entry is a release commit position from the milestone's
 // stable window, verifiable against the chromium-browser-snapshots bucket.
-const MILESTONE_REVISIONS: Readonly<Record<number, number>> = {
-  60: 459699,
-  61: 470654,
-  62: 481828,
-  63: 492980,
-  64: 503926,
-  65: 514835,
-  66: 525954,
-  67: 537081,
-  68: 548147,
-  69: 559284,
-  70: 570231,
-  71: 581435,
-  72: 592435,
-  73: 603616,
-  74: 614471,
-  75: 625271,
-  76: 636258,
-  77: 647398,
-  78: 658568,
-  79: 669316,
-  80: 679434,
-  81: 690723,
-  83: 711868,
-  84: 722884,
-  85: 734203,
-  86: 745050,
-  87: 755858,
-  88: 766230,
-  89: 776875,
-  90: 787889,
-  91: 798893,
-  92: 809488,
-  93: 820435,
-  94: 831233,
-  95: 842069,
-  96: 853104,
-  97: 864159,
-  98: 875147,
-  99: 886216,
-  100: 897410,
-  101: 908261,
-  102: 918797,
-  103: 929154,
-  104: 939768,
-  105: 950384,
-  106: 961173,
-  107: 971713,
-  108: 982495,
-  109: 993133,
-  110: 1003802,
-  111: 1014680,
-  112: 1025645,
+const VERIFIED_MILESTONE_REVISIONS: Readonly<Record<number, number>> = {
+  // Evidence: published Puppeteer release records and npm package pins.
+  // 60–61 have no verified Puppeteer pin; 82 was cancelled; 94–96 are gaps.
+  62: 497674,
+  63: 499413,
+  64: 515411,
+  65: 526987,
+  66: 536395,
+  67: 549031,
+  68: 555668,
+  69: 575458,
+  70: 579032,
+  71: 594312,
+  72: 609904,
+  73: 624492,
+  74: 637110,
+  75: 650583,
+  76: 662092,
+  77: 674921,
+  78: 686378,
+  79: 706915,
+  80: 722234,
+  81: 737027,
+  83: 756035,
+  84: 768783,
+  85: 782078,
+  86: 800071,
+  87: 809590,
+  88: 818858,
+  89: 843427,
+  90: 856583,
+  91: 869685,
+  92: 884014,
+  93: 901912,
+  97: 938248,
+  98: 950341,
+  99: 961656,
+  100: 970485,
+  101: 982053,
+  102: 991974,
+  103: 1002410,
+  104: 1011831,
+  105: 1022525,
+  106: 1036745,
+  107: 1045629,
+  108: 1056772,
+  109: 1069273,
+  110: 1083080,
+  111: 1095492,
+  112: 1108766,
 };

@@ -1,10 +1,17 @@
-import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import type { BrowserBinary } from '../browsers/types.js';
 import type { JsError } from '../reporting/types.js';
 import type { ResolvedConfig, ResolvedPage } from '../config/resolve.js';
 import type { AutomationController, ControllerSession, GotoResult, ReadinessOutcome, SignalSinks } from './types.js';
 import type { WebDriverLike, WebDriverLogEntry } from 'selenium-webdriver';
+
+type LegacySessionResponse = {
+  sessionId?: string;
+  status?: number;
+  value?: Record<string, unknown> & { sessionId?: string; message?: string };
+};
 
 /**
  * WebDriver controller — drives REAL historical Firefox binaries via geckodriver
@@ -26,64 +33,70 @@ export class WebDriverController implements AutomationController {
   readonly kind = 'webdriver' as const;
 
   async launch(binary: BrowserBinary, config: ResolvedConfig): Promise<ControllerSession> {
+    const engine = binary.engine;
+    if (engine !== 'firefox' && engine !== 'chromium') {
+      throw new Error('WebDriver controller requires binary.engine to be firefox or chromium.');
+    }
     if (!binary.driverPath || !existsSync(binary.driverPath)) {
-      throw new Error(
-        `WebDriver controller requires a geckodriver binary (driverPath missing or not found).`,
-      );
+      throw new Error(`WebDriver controller requires a ${engine} driver binary (driverPath missing or not found).`);
     }
     if (!binary.executablePath || !existsSync(binary.executablePath)) {
-      throw new Error(
-        `WebDriver controller requires a Firefox binary (executablePath missing or not found).`,
-      );
+      throw new Error(`WebDriver controller requires a ${engine} browser binary (executablePath missing or not found).`);
     }
 
-    // Dynamic import — selenium-webdriver is an OPTIONAL dependency.
     const sw = await import('selenium-webdriver');
-    const firefox = await import('selenium-webdriver/firefox');
     const { Builder } = sw;
-
-    // Start geckodriver as a managed subprocess so we own its lifecycle and
-    // can tear it down deterministically (it does not self-daemonize cleanly
-    // across selenium versions). We let selenium connect to our server.
     const port = await freePort();
-    const geckodriver = spawn(binary.driverPath, ['--port', String(port)], {
+    const legacyDriver = engine === 'chromium' && isLegacyChromeDriver(binary.driverPath);
+    const driverEnv = legacyDriver ? legacyChromeDriverEnv(binary.driverPath) : process.env;
+    const driverProcess = spawn(binary.driverPath, driverServerArgs(engine, port), {
       stdio: ['ignore', 'pipe', 'pipe'],
+      env: driverEnv,
     });
-    // Buffer stderr for diagnostics if the session fails to come up.
     let stderrBuf = '';
-    geckodriver.stderr?.on('data', (d: Buffer) => {
+    driverProcess.stderr?.on('data', (d: Buffer) => {
       stderrBuf += d.toString();
       if (stderrBuf.length > 4096) stderrBuf = stderrBuf.slice(-4096);
     });
-    await waitForServer(port, 10_000).catch((err) => {
-      killProc(geckodriver);
+    await waitForServer(port, 10_000, driverProcess).catch((err) => {
+      killProc(driverProcess);
       throw new Error(
-        `geckodriver did not start on port ${port}: ${err instanceof Error ? err.message : err}. ${stderrBuf.trim()}`,
+        `${engine} driver did not start on port ${port}: ${err instanceof Error ? err.message : err}. ${stderrBuf.trim()}`,
       );
     });
 
-    const options = new firefox.Options();
-    options.setBinary(binary.executablePath);
-    // headless: Firefox respects MOZ_HEADLESS; the legacy `--headless` flag also
-    // works on ≥55. We pass it only when not headed.
-    if (!config.headed) options.addArguments('--headless');
-    // Collect browser/console logs for JS-error attribution.
-    options.setPreference('devtools.console.stdout.content', true);
-    // Performance logging exposes request failures (geckodriver ≥0.31 via
-    // network events; older builds fall back to no network signals — handled).
     const loggingPrefs = new sw.logging.Preferences();
     loggingPrefs.setLevel(sw.logging.Type.BROWSER, sw.logging.Level.ALL);
+    if (engine === 'chromium') {
+      loggingPrefs.setLevel('performance' as never, sw.logging.Level.ALL);
+    }
+    let builder = new Builder().forBrowser(engine === 'chromium' ? 'chrome' : 'firefox');
+    if (engine === 'chromium') {
+      const chrome = await import('selenium-webdriver/chrome');
+      const options = new chrome.Options()
+        .setChromeBinaryPath(binary.executablePath)
+        .addArguments('--no-sandbox', '--disable-dev-shm-usage');
+      if (!config.headed) options.addArguments('--headless');
+      builder = builder.setChromeOptions(options);
+    } else {
+      const firefox = await import('selenium-webdriver/firefox');
+      const options = new firefox.Options();
+      options.setBinary(binary.executablePath);
+      if (!config.headed) options.addArguments('--headless');
+      options.setPreference('devtools.console.stdout.content', true);
+      builder = builder.setFirefoxOptions(options);
+    }
 
     let driver: WebDriverLike;
     try {
-      driver = (await new Builder()
-        .forBrowser('firefox')
-        .setFirefoxOptions(options)
-        .usingServer(`http://127.0.0.1:${port}`)
-        .setLoggingPrefs(loggingPrefs)
-        .build()) as WebDriverLike;
+      driver = legacyDriver
+        ? await createLegacyChromeDriverSession(sw, binary.executablePath, config, port)
+        : (await builder
+            .usingServer(`http://127.0.0.1:${port}`)
+            .setLoggingPrefs(loggingPrefs)
+            .build()) as WebDriverLike;
     } catch (err) {
-      killProc(geckodriver);
+      killProc(driverProcess);
       throw new Error(
         `Could not start WebDriver session for ${binary.buildLabel}: ${err instanceof Error ? err.message : err}.`,
       );
@@ -97,18 +110,21 @@ export class WebDriverController implements AutomationController {
       /* non-fatal — best effort */
     }
 
-    return new WebDriverSession(driver, geckodriver, port);
+    return new WebDriverSession(driver, driverProcess, port, engine);
   }
 }
 
 class WebDriverSession implements ControllerSession {
   readonly supportsTracing = false;
   private collectedLogs = false;
+  private responseCount = 0;
+  private readonly requests = new Map<string, { url: string; method: string; resourceType: string }>();
 
   constructor(
     private readonly driver: WebDriverLike,
     private readonly geckodriver: ChildProcess,
     private readonly port: number,
+    private readonly engine: 'firefox' | 'chromium',
   ) {}
 
   async startTrace(): Promise<void> {
@@ -155,7 +171,7 @@ class WebDriverSession implements ControllerSession {
         error: `Navigation failed: ${msg}`,
         isTransient,
         inflight: [],
-        responseCount: this.collectedLogs ? 1 : 0,
+        responseCount: this.responseCount,
       };
     }
     const elapsed = Date.now() - start;
@@ -168,15 +184,15 @@ class WebDriverSession implements ControllerSession {
       };
     }
     await this.drainLogs();
-    return { error: null, isTransient: false, inflight: [], responseCount: 1 };
+    return { error: null, isTransient: false, inflight: [], responseCount: this.responseCount };
   }
 
   async checkReadiness(rpage: ResolvedPage, timeoutMs: number): Promise<ReadinessOutcome> {
     const start = Date.now();
     if (rpage.readiness.kind === 'function') {
-      // Custom readiness isn't portable to WebDriver (the function closes over a
-      // Playwright Page). Treat as inconclusive render — caller decides.
-      return { rendered: true, renderedSelectors: [], readyMs: Date.now() - start, error: null };
+      throw new Error(
+        'Custom readiness callbacks require a Playwright Page and are not supported by the WebDriver controller.',
+      );
     }
     if (rpage.readiness.kind === 'none') {
       let hasContent = false;
@@ -272,6 +288,7 @@ class WebDriverSession implements ControllerSession {
   private async drainLogs(): Promise<void> {
     const sinks = this._sinks;
     if (!sinks) return;
+    if (this.engine === 'chromium') await this.drainPerformanceLogs(sinks);
     let entries: WebDriverLogEntry[] = [];
     try {
       entries = await this.driver.manage().logs().get('browser');
@@ -280,7 +297,7 @@ class WebDriverSession implements ControllerSession {
     }
     this.collectedLogs = true;
     for (const e of entries) {
-      const lvl = (e.level?.value ?? e.level?.name ?? '').toLowerCase();
+      const lvl = normalizeWebDriverLogLevel(e.level);
       const text = e.message ?? '';
       // WebDriver "browser" logs carry "JavaScript error:" prefixed messages on
       // Firefox. Capture both uncaught JS errors and console output.
@@ -291,6 +308,46 @@ class WebDriverSession implements ControllerSession {
         sinks.onConsole(lvl, text);
       } else if (lvl === 'severe') {
         sinks.onConsole('error', text);
+      }
+    }
+  }
+
+  private async drainPerformanceLogs(sinks: SignalSinks): Promise<void> {
+    let entries: WebDriverLogEntry[];
+    try {
+      entries = await this.driver.manage().logs().get('performance');
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      try {
+        const envelope = JSON.parse(entry.message) as {
+          message?: { method?: string; params?: Record<string, unknown> };
+        };
+        const event = envelope.message;
+        const params = event?.params ?? {};
+        const requestId = String(params.requestId ?? '');
+        if (event?.method === 'Network.requestWillBeSent') {
+          const request = params.request as { url?: string; method?: string } | undefined;
+          this.requests.set(requestId, {
+            url: request?.url ?? '',
+            method: request?.method ?? 'GET',
+            resourceType: String(params.type ?? '').toLowerCase(),
+          });
+        } else if (event?.method === 'Network.responseReceived') {
+          this.responseCount++;
+        } else if (event?.method === 'Network.loadingFailed') {
+          const request = this.requests.get(requestId);
+          sinks.onRequestFailure(
+            request?.url ?? '',
+            request?.method ?? 'GET',
+            request?.resourceType ?? String(params.type ?? '').toLowerCase(),
+            typeof params.errorText === 'string' ? params.errorText : null,
+          );
+          this.requests.delete(requestId);
+        }
+      } catch {
+        /* malformed/unsupported performance-log entry */
       }
     }
   }
@@ -326,9 +383,105 @@ async function freePort(): Promise<number> {
   });
 }
 
-async function waitForServer(port: number, timeoutMs: number): Promise<void> {
+export function driverServerArgs(engine: 'firefox' | 'chromium', port: number): string[] {
+  return engine === 'chromium' ? [`--port=${port}`] : ['--port', String(port)];
+}
+
+export function normalizeWebDriverLogLevel(level: { value?: unknown; name?: unknown } | undefined): string {
+  const raw = typeof level?.value === 'string' ? level.value : level?.name;
+  return typeof raw === 'string' ? raw.toLowerCase() : '';
+}
+
+export function legacySessionPayload(executablePath: string, headless: boolean): Record<string, unknown> {
+  const args = ['--no-sandbox', '--disable-dev-shm-usage'];
+  if (headless) args.push('--headless');
+  return {
+    desiredCapabilities: {
+      browserName: 'chrome',
+      chromeOptions: { binary: executablePath, args },
+      loggingPrefs: { browser: 'ALL' },
+    },
+  };
+}
+
+function isLegacyChromeDriver(driverPath: string): boolean {
+  const result = spawnSync(driverPath, ['--version'], { encoding: 'utf8', timeout: 10_000 });
+  return !result.error && result.status === 0 && isLegacyChromeDriverVersion(`${result.stdout} ${result.stderr}`);
+}
+
+export function isLegacyChromeDriverVersion(output: string): boolean {
+  const match = output.match(/ChromeDriver\s+(\d+)(?:\.|$)/i);
+  if (!match) return false;
+  const major = Number(match[1]);
+  return major === 2 || major < 75;
+}
+
+export function legacyFontconfigXml(fontDirs: string[]): string {
+  const dirs = fontDirs.map((dir) => `  <dir>${dir}</dir>`).join('\n');
+  return `<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig>\n${dirs}\n  <cachedir>/tmp/browser-boundary-font-cache</cachedir>\n  <config></config>\n</fontconfig>\n`;
+}
+
+function legacyChromeDriverEnv(driverPath: string): NodeJS.ProcessEnv {
+  const configDir = path.join(path.dirname(driverPath), 'fontconfig');
+  const configPath = path.join(configDir, 'fonts.conf');
+  mkdirSync(configDir, { recursive: true });
+  if (!existsSync(configPath)) {
+    const candidates = [
+      '/usr/share/fonts/truetype/dejavu',
+      '/usr/share/fonts/truetype/liberation2',
+      '/usr/share/fonts/truetype/liberation',
+    ].filter(existsSync);
+    writeFileSync(configPath, legacyFontconfigXml(candidates));
+  }
+  return { ...process.env, FONTCONFIG_FILE: configPath, FONTCONFIG_PATH: configDir };
+}
+
+async function createLegacyChromeDriverSession(
+  sw: typeof import('selenium-webdriver'),
+  executablePath: string,
+  config: ResolvedConfig,
+  port: number,
+): Promise<WebDriverLike> {
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const controller = new AbortController();
+  const startupTimeoutMs = Math.max(10_000, Math.min(config.timeout, 30_000));
+  const timer = setTimeout(() => controller.abort(), startupTimeoutMs);
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json;charset=UTF-8' },
+      body: JSON.stringify(legacySessionPayload(executablePath, !config.headed)),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new Error(`legacy Chromium session startup exceeded ${startupTimeoutMs}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+  const body = await response.json() as LegacySessionResponse;
+  const sessionId = body.sessionId ?? body.value?.sessionId;
+  if (!response.ok || body.status !== 0 || !sessionId) {
+    throw new Error(body.value?.message ?? `legacy ChromeDriver session failed with HTTP ${response.status}`);
+  }
+
+  const http = await import('selenium-webdriver/http');
+  const sessionModule = await import('selenium-webdriver/lib/session');
+  const capabilitiesModule = await import('selenium-webdriver/lib/capabilities');
+  const executor = new http.Executor(new http.HttpClient(baseUrl));
+  const session = new sessionModule.Session(sessionId, new capabilitiesModule.Capabilities(body.value));
+  return new sw.WebDriver(session, executor) as WebDriverLike;
+}
+
+async function waitForServer(port: number, timeoutMs: number, process: ChildProcess): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    if (process.exitCode !== null || process.signalCode !== null) {
+      throw new Error(`driver exited before becoming ready (exit ${process.exitCode ?? process.signalCode})`);
+    }
     try {
       const res = await fetch(`http://127.0.0.1:${port}/status`);
       if (res.ok) return;

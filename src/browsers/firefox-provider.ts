@@ -96,6 +96,7 @@ export class FirefoxProvider {
       const firefox = await this.downloadFirefox(requestedMajor, cacheDir);
       const driver = await this.downloadGeckodriver(compat, cacheDir);
       return {
+        engine: 'firefox',
         executablePath: firefox.executablePath,
         buildLabel: `Firefox ${requestedMajor}.0 (archive.mozilla.org)`,
         versionType: 'real-major',

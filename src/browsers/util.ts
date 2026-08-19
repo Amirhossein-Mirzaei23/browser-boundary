@@ -10,12 +10,17 @@ import type { FetchProgressHandler } from './progress.js';
 export async function readManifest(recordPath: string): Promise<{
   executablePath: string;
   buildLabel: string;
+  driverPath?: string;
 } | null> {
   if (!existsSync(recordPath)) return null;
   try {
     const rec = JSON.parse(await readFile(recordPath, 'utf8'));
     if (rec?.executablePath && existsSync(rec.executablePath)) {
-      return { executablePath: rec.executablePath, buildLabel: rec.buildLabel };
+      return {
+        executablePath: rec.executablePath,
+        buildLabel: rec.buildLabel,
+        driverPath: rec.driverPath,
+      };
     }
   } catch {
     /* corrupt manifest — ignore */
@@ -25,7 +30,7 @@ export async function readManifest(recordPath: string): Promise<{
 
 export async function writeManifest(
   recordPath: string,
-  data: { executablePath: string; buildLabel: string },
+  data: { executablePath: string; buildLabel: string; driverPath?: string },
 ): Promise<void> {
   await writeFile(recordPath, JSON.stringify(data, null, 2));
 }

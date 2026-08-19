@@ -64,6 +64,13 @@ export function requiredPackagesFor(
           reason: 'fetching historical Chrome-for-Testing binaries',
           installCommand: 'npm install @puppeteer/browsers',
         },
+        ...(config.chromiumController === 'playwright'
+          ? []
+          : [{
+              name: 'selenium-webdriver',
+              reason: 'driving historical Chromium with its matching ChromeDriver',
+              installCommand: 'npm install selenium-webdriver',
+            }]),
       ];
     case 'firefox':
       return [

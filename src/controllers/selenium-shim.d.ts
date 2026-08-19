@@ -48,10 +48,21 @@ declare module 'selenium-webdriver' {
   }
   export class Builder {
     forBrowser(name: string): this;
+    setChromeOptions(options: unknown): this;
     setFirefoxOptions(options: unknown): this;
     usingServer(url: string): this;
     setLoggingPrefs(prefs: unknown): this;
     build(): Promise<WebDriverLike>;
+  }
+  export class WebDriver implements WebDriverLike {
+    constructor(session: unknown, executor: unknown);
+    get(url: string): Promise<void>;
+    getWindowHandle(): Promise<string>;
+    quit(): Promise<void>;
+    executeScript<T>(script: string, ...args: unknown[]): Promise<T>;
+    findElements(locator: { using: string; value: string }): Promise<WebDriverElement[]>;
+    manage(): WebDriverManage;
+    takeScreenshot(): Promise<string>;
   }
   export namespace logging {
     export enum Type {
@@ -71,5 +82,33 @@ declare module 'selenium-webdriver/firefox' {
     setBinary(path: string): void;
     addArguments(...args: string[]): void;
     setPreference(key: string, value: unknown): void;
+  }
+}
+
+declare module 'selenium-webdriver/chrome' {
+  export class Options {
+    setChromeBinaryPath(path: string): this;
+    addArguments(...args: string[]): this;
+  }
+}
+
+declare module 'selenium-webdriver/http' {
+  export class HttpClient {
+    constructor(serverUrl: string);
+  }
+  export class Executor {
+    constructor(client: HttpClient);
+  }
+}
+
+declare module 'selenium-webdriver/lib/session' {
+  export class Session {
+    constructor(id: string, capabilities: unknown);
+  }
+}
+
+declare module 'selenium-webdriver/lib/capabilities' {
+  export class Capabilities {
+    constructor(other?: Record<string, unknown>);
   }
 }

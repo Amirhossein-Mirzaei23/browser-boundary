@@ -18,9 +18,16 @@ import type { FetchProgressHandler } from './progress.js';
  *    via geckodriver, since vanilla Firefox builds lack Juggler).
  */
 export type ControllerKind = 'playwright' | 'webdriver';
+export type ChromiumControllerPolicy = 'auto' | 'playwright' | 'webdriver';
+
+export interface BrowserInstallOptions {
+  chromiumController?: ChromiumControllerPolicy;
+}
 
 /** A resolved, ready-to-launch browser binary. */
 export interface BrowserBinary {
+  /** Browser engine this binary belongs to; controllers must not infer it from labels. */
+  engine?: EngineName;
   executablePath: string;
   buildLabel: string;
   versionType: VersionType;
@@ -53,6 +60,7 @@ export interface BrowserProvider {
     version: string,
     cacheDir: string,
     onProgress?: FetchProgressHandler,
+    options?: BrowserInstallOptions,
   ): Promise<BrowserBinary>;
   /** Resolve the current latest build for an engine. */
   getLatest(engine: EngineName): Promise<BrowserVersion>;
@@ -72,7 +80,7 @@ export interface BrowserProvider {
  */
 export class HistoricalUnavailableError extends Error {
   /** Stable machine-readable code for filtering in logs/tests. */
-  readonly code: 'below-floor' | 'no-driver' | 'download-failed';
+  readonly code: 'below-floor' | 'unsupported-version' | 'no-driver' | 'download-failed';
   constructor(
     message: string,
     code: HistoricalUnavailableError['code'] = 'download-failed',

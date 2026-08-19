@@ -14,6 +14,23 @@ test('resolveConfig applies defaults', () => {
   assert.equal(cfg.timeout, 30000);
   assert.equal(cfg.strategy, 'binary');
   assert.equal(cfg.siteName, 'https://example.com');
+  assert.equal(cfg.chromiumController, 'auto');
+});
+
+test('resolveConfig accepts an explicit Chromium controller policy', () => {
+  const cfg = resolveConfig({ urls: ['https://example.com'], chromiumController: 'webdriver' });
+  assert.equal(cfg.chromiumController, 'webdriver');
+});
+
+test('resolveConfig rejects an unknown Chromium controller policy', () => {
+  assert.throws(
+    () => resolveConfig({
+      urls: ['https://example.com'],
+      // @ts-expect-error exercising runtime validation
+      chromiumController: 'puppeteer',
+    }),
+    (err: unknown) => err instanceof ConfigError && /auto, playwright, webdriver/.test(err.message),
+  );
 });
 
 test('resolveConfig rejects missing urls', () => {
@@ -116,13 +133,13 @@ test('explicit versions cannot exceed the current engine major', () => {
     () => validateExplicitVersionsAgainstLatest('chromium', ['120', '125'], 124),
     (err: unknown) =>
       err instanceof ConfigError &&
-      /Chromium versions must be in the supported range 60–124/.test(err.message) &&
+      /Chromium versions must be in the supported range 67–124/.test(err.message) &&
       /125/.test(err.message),
   );
 });
 
 test('explicit versions at the engine boundaries are valid', () => {
-  assert.doesNotThrow(() => validateExplicitVersionsAgainstLatest('chromium', ['60', '124'], 124));
+  assert.doesNotThrow(() => validateExplicitVersionsAgainstLatest('chromium', ['67', '124'], 124));
   assert.doesNotThrow(() => validateExplicitVersionsAgainstLatest('firefox', ['52', '125'], 125));
 });
 

@@ -8,6 +8,7 @@ import type { EngineName } from '../reporting/types.js';
  */
 
 export type SearchStrategy = 'step-down' | 'binary' | 'latest' | 'explicit';
+export type ChromiumControllerPolicy = 'auto' | 'playwright' | 'webdriver';
 
 /** A readiness check for a page. Either declarative selectors or a function. */
 export type ReadinessSpec =
@@ -32,6 +33,8 @@ export interface ScanConfig {
   urls: (string | PageSpec)[];
   /** Engines to scan. */
   engines?: EngineName[];
+  /** Controller for Chromium. `auto` uses WebDriver for historical snapshots. */
+  chromiumController?: ChromiumControllerPolicy;
   /** A human site name used in report titles (defaults to first URL origin). */
   siteName?: string;
 
@@ -118,6 +121,7 @@ export interface ScanConfig {
 
 export const DEFAULTS = {
   engines: ['chromium', 'firefox', 'webkit'] as EngineName[],
+  chromiumController: 'auto' as ChromiumControllerPolicy,
   timeout: 30_000,
   headed: true,
   retries: 3,
@@ -127,10 +131,10 @@ export const DEFAULTS = {
   holdOpenSec: 2,
   strategy: 'binary' as SearchStrategy,
   stepSize: 10,
-  // Chrome: Chrome-for-Testing (≥113) + Chromium snapshots (60–112) cover the
-  // full range. Firefox: geckodriver drives from 52 onward, so 60 is a safe
+  // Chrome: Chrome-for-Testing (≥113) + verified Chromium snapshots cover 67+
+  // on supported hosts. Firefox: geckodriver drives from 52 onward, so 60 is a safe
   // floor. WebKit: current-only (no historical off macOS).
-  floor: { chromium: 60, firefox: 60, webkit: 13 } as Record<EngineName, number>,
+  floor: { chromium: 67, firefox: 60, webkit: 13 } as Record<EngineName, number>,
   format: ['json', 'markdown'] as ('json' | 'markdown')[],
   outputDir: './reports',
   cacheDir: '~/.cache/browser-boundary',

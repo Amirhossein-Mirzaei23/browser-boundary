@@ -7,8 +7,10 @@ import {
 } from '../../src/core/dependencies.js';
 import { resolveConfig } from '../../src/config/resolve.js';
 
-const cfg = (strategy: 'binary' | 'latest' | 'explicit' = 'binary') =>
-  resolveConfig({ urls: ['https://x.com'], search: { strategy } });
+const cfg = (
+  strategy: 'binary' | 'latest' | 'explicit' = 'binary',
+  chromiumController: 'auto' | 'playwright' | 'webdriver' = 'auto',
+) => resolveConfig({ urls: ['https://x.com'], search: { strategy }, chromiumController });
 
 test('isPackageInstalled returns true for a builtin-like resolvable and false for nonsense', () => {
   // 'playwright' is a peer dep and present in this repo.
@@ -26,11 +28,14 @@ test('requiredPackagesFor: webkit never needs optional packages (no historical)'
   assert.deepEqual(requiredPackagesFor('webkit', cfg('binary')), []);
 });
 
-test('requiredPackagesFor: chromium historical needs @puppeteer/browsers', () => {
+test('requiredPackagesFor: Chromium auto mode needs acquisition and WebDriver packages', () => {
   const req = requiredPackagesFor('chromium', cfg('binary'));
-  assert.equal(req.length, 1);
-  assert.equal(req[0].name, '@puppeteer/browsers');
-  assert.match(req[0].installCommand, /npm install @puppeteer\/browsers/);
+  assert.deepEqual(req.map((item) => item.name), ['@puppeteer/browsers', 'selenium-webdriver']);
+});
+
+test('requiredPackagesFor: Chromium Playwright mode does not require selenium-webdriver', () => {
+  const req = requiredPackagesFor('chromium', cfg('binary', 'playwright'));
+  assert.deepEqual(req.map((item) => item.name), ['@puppeteer/browsers']);
 });
 
 test('requiredPackagesFor: firefox historical needs selenium-webdriver', () => {

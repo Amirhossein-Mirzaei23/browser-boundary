@@ -32,6 +32,7 @@ const CLI_OPTIONS = {
     'min-confidence': { type: 'string' },
     versions: { type: 'string' },
     'exact-version': { type: 'string' },
+    'chromium-controller': { type: 'string' },
 } as const;
 
 export interface ParsedCli {
@@ -94,9 +95,13 @@ export function parseCli(
     | undefined;
 
   const selectors = values['readiness-selector'];
+  const chromiumController = parseChromiumController(
+    values['chromium-controller'] ?? env.MRZ_CHROMIUM_CONTROLLER ?? env.BC_CHROMIUM_CONTROLLER,
+  );
   const config: Partial<ScanConfig> = {
     urls,
     engines: engines?.length ? engines : undefined,
+    chromiumController,
     search: {
       strategy: explicitVersions ? 'explicit' : latestOnly ? 'latest' : strategy,
       stepSize: num(values['step-size'] ?? env.MRZ_STEP_SIZE ?? env.BC_STEP_SIZE),
@@ -140,6 +145,14 @@ function envBool(env: NodeJS.ProcessEnv, name: string): boolean {
   return v === '1' || v.toLowerCase() === 'true' || v.toLowerCase() === 'yes';
 }
 
+function parseChromiumController(value: string | undefined): 'auto' | 'playwright' | 'webdriver' | undefined {
+  if (value === undefined) return undefined;
+  if (value === 'auto' || value === 'playwright' || value === 'webdriver') return value;
+  throw new ConfigError(
+    `Unknown Chromium controller "${value}". Valid values: auto, playwright, webdriver.`,
+  );
+}
+
 const VALID_ENGINES: EngineName[] = ['chromium', 'firefox', 'webkit'];
 
 function validateEngines(engines: EngineName[] | undefined): void {
@@ -167,10 +180,10 @@ function parseExplicitVersions(
   if (versions.length === 0 || versions.some((version) => !/^\d+$/.test(version))) {
     throw new ConfigError(
       '--versions accepts whole major versions only (for example: 120 or 120,115). ' +
-      'Valid ranges: Chromium: 60–current; Firefox: 52–current; WebKit: current only.',
+      'Valid ranges: Chromium: 67–current; Firefox: 52–current; WebKit: current only.',
     );
   }
-  const floor = engine === 'chromium' ? 60 : 52;
+  const floor = engine === 'chromium' ? 67 : 52;
   const belowFloor = versions.filter((version) => Number(version) < floor);
   if (belowFloor.length) {
     throw new ConfigError(
@@ -224,6 +237,7 @@ Options:
   --exact-version <major>   alias for --versions when testing one exact major
   --latest-only             probe only the current build per engine
   --headless                run browsers invisibly (default: headed, windows shown)
+  --chromium-controller <m> auto | playwright | webdriver (default: auto)
   --format <list>           json,markdown (default: both)
   -o, --output <dir>        report directory (default: ./reports)
   --timeout <ms>            per-page readiness/navigation timeout (default: 30000)
@@ -250,7 +264,7 @@ WebKit note: only the current Playwright WebKit build is drivable; it is NOT
 reported as a specific Safari version.
 
 Specific-version ranges:
-  Chromium  60–current
+  Chromium  67–current
   Firefox   52–current
   WebKit    current only (specific versions unsupported)
 

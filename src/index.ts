@@ -18,13 +18,14 @@ export type {
   PageSpec,
   ReadinessSpec,
   SearchStrategy,
+  ChromiumControllerPolicy,
   ResourceType,
 } from './config/schema.js';
 export { DEFAULTS, ConfigError, resolveConfig, toRegExp } from './config/index.js';
 export type { ResolvedConfig, ResolvedPage } from './config/resolve.js';
 
 // Browser providers
-export type { BrowserBinary, BrowserProvider, BrowserVersion, ControllerKind } from './browsers/types.js';
+export type { BrowserBinary, BrowserInstallOptions, BrowserProvider, BrowserVersion, ControllerKind } from './browsers/types.js';
 export { HistoricalUnavailableError } from './browsers/types.js';
 export { DefaultBrowserProvider, defaultBrowserProvider } from './browsers/provider.js';
 // geckodriver ↔ Firefox compatibility matrix (for advanced consumers / custom providers)
@@ -34,6 +35,11 @@ export {
   GECKODRIVER_ABSOLUTE_FLOOR,
   type GeckodriverCompat,
 } from './browsers/geckodriver-matrix.js';
+export {
+  resolveLegacyChromeDriver,
+  LEGACY_CHROMEDRIVER_MATRIX,
+  type LegacyChromeDriverCompat,
+} from './browsers/chromedriver-matrix.js';
 
 // Results & reporting
 export type {

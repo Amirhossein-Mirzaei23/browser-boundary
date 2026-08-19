@@ -1,17 +1,21 @@
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import type { EngineName } from '../reporting/types.js';
-import type { BrowserBinary, BrowserVersion } from './types.js';
+import type { BrowserBinary, BrowserInstallOptions, BrowserVersion } from './types.js';
 import { HistoricalUnavailableError } from './types.js';
 import { PlaywrightProvider } from './playwright-provider.js';
 import { cleanDir, downloadFile, ensureDir, extractZip, readManifest, writeManifest } from './util.js';
 import type { FetchProgressHandler } from './progress.js';
+import { legacyChromeDriverUrls, resolveLegacyChromeDriver } from './chromedriver-matrix.js';
 import {
   snapshotRevisionFor,
   probeSnapshotRevision,
+  probeSnapshotDriverRevision,
   findNearestAvailableSnapshotRevision,
   SNAPSHOT_LINUX_FOLDER,
   SNAPSHOT_MILESTONE_MAX,
+  SNAPSHOT_MILESTONE_MIN,
 } from './chromium-snapshots.js';
 
 /**
@@ -54,6 +58,7 @@ export class ChromiumProvider {
     version: string,
     cacheDir: string,
     onProgress?: FetchProgressHandler,
+    options?: BrowserInstallOptions,
   ): Promise<BrowserBinary> {
     if (engine !== 'chromium') {
       return this.playwright.install(engine, version, cacheDir);
@@ -61,8 +66,23 @@ export class ChromiumProvider {
     const latest = await this.getLatest(engine);
     const requestedMajor = Number(version);
     const latestMajor = Number(latest.version);
-    if (!Number.isNaN(latestMajor) && requestedMajor >= latestMajor) {
+    const controllerPolicy = options?.chromiumController ?? 'auto';
+    if (!Number.isNaN(latestMajor) && requestedMajor > latestMajor) {
+      throw new HistoricalUnavailableError(
+        `Requested Chromium ${requestedMajor} is newer than available Chromium ${latestMajor}; this version was not tested.`,
+        'unsupported-version',
+      );
+    }
+    if (controllerPolicy === 'webdriver' && requestedMajor >= SNAPSHOT_MILESTONE_MAX + 1) {
+      throw new HistoricalUnavailableError(
+        `The WebDriver controller is only supported for snapshot-era Chromium ${SNAPSHOT_MILESTONE_MIN}–${SNAPSHOT_MILESTONE_MAX}; ` +
+          `Chromium ${requestedMajor} was not tested.`,
+        'no-driver',
+      );
+    }
+    if (!Number.isNaN(latestMajor) && requestedMajor === latestMajor) {
       return {
+        engine: 'chromium',
         executablePath: latest.executablePath,
         buildLabel: latest.buildLabel,
         versionType: 'real-major',
@@ -76,13 +96,28 @@ export class ChromiumProvider {
       const historical =
         requestedMajor >= SNAPSHOT_MILESTONE_MAX + 1
           ? await this.downloadChromiumForTesting(requestedMajor, cacheDir, onProgress)
-          : await this.downloadChromiumSnapshot(requestedMajor, cacheDir, onProgress);
+          : await this.downloadChromiumSnapshot(
+              requestedMajor,
+              cacheDir,
+              onProgress,
+              (options?.chromiumController ?? 'auto') !== 'playwright',
+            );
+      const useWebDriver = controllerPolicy === 'webdriver' ||
+        (controllerPolicy === 'auto' && requestedMajor <= SNAPSHOT_MILESTONE_MAX);
+      if (useWebDriver && !historical.driverPath) {
+        throw new HistoricalUnavailableError(
+          `No matching ChromeDriver was obtained for Chromium ${requestedMajor}; this version was not tested.`,
+          'no-driver',
+        );
+      }
       return {
+        engine: 'chromium',
         executablePath: historical.executablePath,
         buildLabel: historical.buildLabel,
         versionType: 'real-major',
         isPlaywrightBuild: false,
-        controller: 'playwright',
+        controller: useWebDriver ? 'webdriver' : 'playwright',
+        driverPath: useWebDriver ? historical.driverPath : undefined,
         limitationNote: null,
       };
     } catch (err) {
@@ -106,11 +141,19 @@ export class ChromiumProvider {
     major: number,
     cacheDir: string,
     onProgress?: FetchProgressHandler,
-  ): Promise<{ executablePath: string; buildLabel: string }> {
+  ): Promise<{ executablePath: string; buildLabel: string; driverPath?: string }> {
     const tag = `chromium-${major}`;
     const recordPath = path.join(cacheDir, `${tag}-${INSTALLED_FLAG}`);
     const cached = await readManifest(recordPath);
-    if (cached) return cached;
+    if (cached) {
+      try {
+        verifyChromiumMajor(cached.executablePath, major);
+        return cached;
+      } catch (err) {
+        if (!(err instanceof HistoricalUnavailableError)) throw err;
+        // Invalid CFT manifests are cache misses; resolve and reacquire the exact major.
+      }
+    }
 
     const { install, computeExecutablePath, Browser, resolveBuildId, detectBrowserPlatform } =
       await import('@puppeteer/browsers');
@@ -119,11 +162,6 @@ export class ChromiumProvider {
     if (!platform) throw new Error('Unsupported platform for Chrome-for-Testing download');
 
     const buildId = await resolveBuildId(Browser.CHROME, platform, `${major}`);
-    // resolveBuildId returns the bare input major (e.g. "111") unchanged when it
-    // cannot find a matching Chrome-for-Testing build — instead of throwing. A
-    // real CFT build id is always a full MAJOR.MINOR.BUILD.PATCH (≥3 dots). If we
-    // got a bare number back, no CFT build exists for this major: fail honestly
-    // up front rather than downloading a 404'ing URL.
     if (!/^\d+\.\d+\.\d+\.\d+$/.test(buildId)) {
       throw new HistoricalUnavailableError(
         `Chrome-for-Testing has no build for Chrome ${major}. ` +
@@ -138,14 +176,12 @@ export class ChromiumProvider {
     const fullExe = path.isAbsolute(exe) ? exe : path.join(cache, exe);
 
     if (!existsSync(fullExe)) {
-      // @puppeteer/browsers install() exposes no chunk-level progress callback,
-      // so we emit an indeterminate status and let it run. The renderer shows a
-      // pulse/spinner rather than a percentage bar for this phase.
       onProgress?.({ type: 'status', label: `Downloading Chrome for Testing ${buildId}…`, indeterminate: true });
       await install({ browser: Browser.CHROME, buildId, cacheDir: cache, platform });
     }
 
     const buildLabel = `Chrome for Testing ${buildId}`;
+    verifyChromiumMajor(fullExe, major);
     await writeManifest(recordPath, { executablePath: fullExe, buildLabel });
     return { executablePath: fullExe, buildLabel };
   }
@@ -176,11 +212,25 @@ export class ChromiumProvider {
     major: number,
     cacheDir: string,
     onProgress?: FetchProgressHandler,
-  ): Promise<{ executablePath: string; buildLabel: string }> {
+    requireDriver = false,
+  ): Promise<{ executablePath: string; buildLabel: string; driverPath?: string }> {
     const tag = `chromium-${major}`;
     const recordPath = path.join(cacheDir, `${tag}-${INSTALLED_FLAG}`);
     const cached = await readManifest(recordPath);
-    if (cached) return cached;
+    if (cached) {
+      try {
+        verifyChromiumMajor(cached.executablePath, major);
+        if (!requireDriver) return cached;
+        if (cached.driverPath && existsSync(cached.driverPath)) {
+          verifyChromeDriverForMajor(cached.driverPath, major);
+          return cached;
+        }
+      } catch (err) {
+        if (!(err instanceof HistoricalUnavailableError)) throw err;
+        // Stale manifests from the old milestone table are cache misses. Continue
+        // to the corrected revision instead of stopping on the mislabeled binary.
+      }
+    }
 
     const curated = snapshotRevisionFor(major);
     if (!curated) {
@@ -246,6 +296,8 @@ export class ChromiumProvider {
         extractZip(archive, extractDir);
       } catch (err) {
         // Partial download/extraction must not leave a fake cache hit.
+        rmSync(archive, { force: true });
+        rmSync(extractDir, { recursive: true, force: true });
         throw err instanceof Error ? err : new Error(String(err));
       }
     }
@@ -254,7 +306,172 @@ export class ChromiumProvider {
       revision === curated
         ? `Chromium ${major} (snapshot r${revision})`
         : `Chromium ${major} (snapshot r${revision}, nearest to curated r${curated})`;
-    await writeManifest(recordPath, { executablePath: fullExe, buildLabel });
-    return { executablePath: fullExe, buildLabel };
+    verifyChromiumMajor(fullExe, major);
+    const driverPath = requireDriver
+      ? await this.downloadSnapshotDriver(major, revision, extractDir, cache, onProgress)
+      : undefined;
+    await writeManifest(recordPath, { executablePath: fullExe, buildLabel, driverPath });
+    return { executablePath: fullExe, buildLabel, driverPath };
+  }
+
+  private async downloadSnapshotDriver(
+    major: number,
+    revision: number,
+    extractDir: string,
+    cacheDir: string,
+    onProgress?: FetchProgressHandler,
+  ): Promise<string> {
+    const driverDir = path.join(extractDir, 'chromedriver');
+    const driverCandidates = [
+      path.join(driverDir, 'chromedriver'),
+      path.join(driverDir, 'chromedriver_linux64', 'chromedriver'),
+    ];
+    const cachedDriver = driverCandidates.find((candidate) => existsSync(candidate));
+    if (cachedDriver) {
+      try {
+        verifyChromeDriverForMajor(cachedDriver, major);
+        return cachedDriver;
+      } catch (err) {
+        if (!(err instanceof HistoricalUnavailableError)) throw err;
+        rmSync(driverDir, { recursive: true, force: true });
+      }
+    }
+
+    const probe = await probeSnapshotDriverRevision(revision);
+    if (probe !== 'ok') {
+      const legacy = resolveLegacyChromeDriver(major);
+      if (legacy) {
+        return this.downloadLegacyChromeDriver(major, legacy.version, driverDir, cacheDir, onProgress);
+      }
+      throw new HistoricalUnavailableError(
+        `No matching ChromeDriver snapshot is available for Chromium ${major} (r${revision}). ` +
+          `This version was not tested.`,
+        'no-driver',
+      );
+    }
+    const archive = path.join(cacheDir, `chromedriver-linux-${revision}.zip`);
+    const url = `https://storage.googleapis.com/chromium-browser-snapshots/` +
+      `${SNAPSHOT_LINUX_FOLDER}/${revision}/chromedriver_linux64.zip`;
+    try {
+      if (!existsSync(archive)) {
+        onProgress?.({ type: 'status', label: `Downloading matching ChromeDriver r${revision}…` });
+        await downloadFile(url, archive, onProgress);
+      }
+      await cleanDir(driverDir);
+      extractZip(archive, driverDir);
+    } catch (err) {
+      rmSync(archive, { force: true });
+      rmSync(driverDir, { recursive: true, force: true });
+      throw err instanceof Error ? err : new Error(String(err));
+    }
+    const driverPath = driverCandidates.find((candidate) => existsSync(candidate));
+    if (!driverPath) {
+      throw new HistoricalUnavailableError(
+        `Matching ChromeDriver archive r${revision} did not contain an executable. This version was not tested.`,
+        'no-driver',
+      );
+    }
+    verifyChromeDriver(driverPath, major);
+    return driverPath;
+  }
+
+  private async downloadLegacyChromeDriver(
+    major: number,
+    driverVersion: string,
+    driverDir: string,
+    cacheDir: string,
+    onProgress?: FetchProgressHandler,
+  ): Promise<string> {
+    const archive = path.join(cacheDir, `chromedriver-linux-${driverVersion}.zip`);
+    const driverPath = path.join(driverDir, 'chromedriver');
+    let lastError: unknown;
+    for (const url of legacyChromeDriverUrls(driverVersion)) {
+      try {
+        if (!existsSync(archive)) {
+          onProgress?.({ type: 'status', label: `Downloading ChromeDriver ${driverVersion} for Chromium ${major}…` });
+          await downloadFile(url, archive, onProgress);
+        }
+        await cleanDir(driverDir);
+        extractZip(archive, driverDir);
+        verifyLegacyChromeDriver(driverPath, major, driverVersion);
+        return driverPath;
+      } catch (err) {
+        lastError = err;
+        rmSync(archive, { force: true });
+        rmSync(driverDir, { recursive: true, force: true });
+      }
+    }
+    throw new HistoricalUnavailableError(
+      `Could not obtain ChromeDriver ${driverVersion} for Chromium ${major}: ` +
+        `${lastError instanceof Error ? lastError.message : String(lastError)}. This version was not tested.`,
+      'no-driver',
+    );
+  }
+}
+
+function verifyChromiumMajor(executablePath: string, requestedMajor: number): void {
+  const result = spawnSync(executablePath, ['--version'], { encoding: 'utf8', timeout: 10_000 });
+  if (result.error || result.status !== 0) {
+    const detail = result.error?.message ?? (result.stderr.trim() || `exit status ${result.status}`);
+    throw new HistoricalUnavailableError(
+      `Could not verify requested Chromium ${requestedMajor} binary at ${executablePath}: ${detail}. ` +
+        `This version was not tested.`,
+      'download-failed',
+    );
+  }
+  const output = `${result.stdout} ${result.stderr}`.trim();
+  const match = output.match(/(?:Chromium|Chrome(?: for Testing)?)\s+(\d+)\./i);
+  const actualMajor = match ? Number(match[1]) : null;
+  if (actualMajor !== requestedMajor) {
+    const actual = actualMajor === null
+      ? `an unparseable version (${output || 'no output'})`
+      : `Chromium ${actualMajor}`;
+    throw new HistoricalUnavailableError(
+      `Requested Chromium ${requestedMajor}, but the resolved binary reports ${actual}. ` +
+        `This version was not tested.`,
+      'download-failed',
+    );
+  }
+}
+
+function verifyChromeDriver(executablePath: string, requestedMajor: number): void {
+  const result = spawnSync(executablePath, ['--version'], { encoding: 'utf8', timeout: 10_000 });
+  const output = `${result.stdout ?? ''} ${result.stderr ?? ''}`.trim();
+  const match = output.match(/ChromeDriver\s+(\d+)\./i);
+  if (result.error || result.status !== 0 || Number(match?.[1]) !== requestedMajor) {
+    const detail = result.error?.message ?? (output || `exit status ${result.status}`);
+    throw new HistoricalUnavailableError(
+      `Matching ChromeDriver validation failed for Chromium ${requestedMajor}: ${detail}. ` +
+        `This version was not tested.`,
+      'no-driver',
+    );
+  }
+}
+
+function verifyChromeDriverForMajor(executablePath: string, requestedMajor: number): void {
+  const result = spawnSync(executablePath, ['--version'], { encoding: 'utf8', timeout: 10_000 });
+  const output = `${result.stdout ?? ''} ${result.stderr ?? ''}`.trim();
+  const majorMatch = output.match(/ChromeDriver\s+(\d+)\./i);
+  if (!result.error && result.status === 0 && Number(majorMatch?.[1]) === requestedMajor) return;
+
+  const legacy = resolveLegacyChromeDriver(requestedMajor);
+  if (legacy) {
+    verifyLegacyChromeDriver(executablePath, requestedMajor, legacy.version);
+    return;
+  }
+  verifyChromeDriver(executablePath, requestedMajor);
+}
+
+function verifyLegacyChromeDriver(executablePath: string, requestedMajor: number, expectedVersion: string): void {
+  const result = spawnSync(executablePath, ['--version'], { encoding: 'utf8', timeout: 10_000 });
+  const output = `${result.stdout ?? ''} ${result.stderr ?? ''}`.trim();
+  const valid = !result.error && result.status === 0 && output.includes(`ChromeDriver ${expectedVersion}`);
+  if (!valid) {
+    const detail = result.error?.message ?? (output || `exit status ${result.status}`);
+    throw new HistoricalUnavailableError(
+      `ChromeDriver ${expectedVersion} validation failed for Chromium ${requestedMajor}: ${detail}. ` +
+        `This version was not tested.`,
+      'no-driver',
+    );
   }
 }
