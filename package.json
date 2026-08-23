@@ -70,9 +70,9 @@
     "selenium-webdriver": "^4.46.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.46.0",
+    "@playwright/test": "1.55.1",
     "@types/node": "^20.0.0",
-    "playwright": "^1.46.0",
+    "playwright": "1.55.1",
     "tsup": "^8.3.0",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0"
