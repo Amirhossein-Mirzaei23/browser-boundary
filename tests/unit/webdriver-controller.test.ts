@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { driverServerArgs, isLegacyChromeDriverVersion, legacyFontconfigXml, legacySessionPayload, normalizeWebDriverLogLevel } from '../../src/controllers/webdriver.js';
+import { driverServerArgs, firefoxDriverEnv, isLegacyChromeDriverVersion, legacyFontconfigXml, legacySessionPayload, normalizeWebDriverLogLevel } from '../../src/controllers/webdriver.js';
 
 test('WebDriver ESM subpath imports include the runtime .js extension', () => {
   const source = readFileSync(new URL('../../src/controllers/webdriver.ts', import.meta.url), 'utf8');
@@ -28,6 +28,14 @@ test('ChromeDriver receives the equals-form port argument it accepts', () => {
 
 test('geckodriver receives its separate port arguments', () => {
   assert.deepEqual(driverServerArgs('firefox', 49190), ['--port', '49190']);
+});
+
+test('historical Firefox disables incompatible Linux content sandboxes', () => {
+  const env = firefoxDriverEnv({ EXISTING: 'preserved' });
+
+  assert.equal(env.EXISTING, 'preserved');
+  assert.equal(env.MOZ_DISABLE_CONTENT_SANDBOX, '1');
+  assert.equal(env.MOZ_DISABLE_GMP_SANDBOX, '1');
 });
 
 test('numeric WebDriver log levels do not crash normalization', () => {

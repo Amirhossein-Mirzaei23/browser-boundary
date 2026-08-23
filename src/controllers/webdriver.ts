@@ -48,7 +48,11 @@ export class WebDriverController implements AutomationController {
     const { Builder } = sw;
     const port = await freePort();
     const legacyDriver = engine === 'chromium' && isLegacyChromeDriver(binary.driverPath);
-    const driverEnv = legacyDriver ? legacyChromeDriverEnv(binary.driverPath) : process.env;
+    const driverEnv = legacyDriver
+      ? legacyChromeDriverEnv(binary.driverPath)
+      : engine === 'firefox'
+        ? firefoxDriverEnv(process.env)
+        : process.env;
     const driverProcess = spawn(binary.driverPath, driverServerArgs(engine, port), {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: driverEnv,
@@ -385,6 +389,15 @@ async function freePort(): Promise<number> {
 
 export function driverServerArgs(engine: 'firefox' | 'chromium', port: number): string[] {
   return engine === 'chromium' ? [`--port=${port}`] : ['--port', String(port)];
+}
+
+export function firefoxDriverEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  if (process.platform !== 'linux') return env;
+  return {
+    ...env,
+    MOZ_DISABLE_CONTENT_SANDBOX: '1',
+    MOZ_DISABLE_GMP_SANDBOX: '1',
+  };
 }
 
 export function normalizeWebDriverLogLevel(level: { value?: unknown; name?: unknown } | undefined): string {
