@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { FirefoxProvider, firefoxArchiveUrls, geckodriverAssetUrl } from '../../src/browsers/firefox-provider.js';
 import { HistoricalUnavailableError } from '../../src/browsers/types.js';
@@ -86,6 +87,42 @@ test('FirefoxProvider.install returns the Playwright build for latest-or-newer',
   assert.equal(binary.controller, 'playwright');
   assert.equal(binary.executablePath, '/fake/firefox');
   assert.equal(binary.limitationNote, null);
+});
+
+test('FirefoxProvider replaces a corrupt cached Firefox archive', async () => {
+  const cache = mkdtempSync(path.join(tmpdir(), 'mrz-ff-corrupt-'));
+  const archiveDir = path.join(cache, 'fixture');
+  const firefoxDir = path.join(archiveDir, 'firefox');
+  mkdirSync(firefoxDir, { recursive: true });
+  writeFileSync(path.join(firefoxDir, 'firefox'), '#!/bin/sh\n');
+  const validArchive = path.join(cache, 'valid.tar.bz2');
+  const tar = spawnSync('tar', ['-cjf', validArchive, '-C', archiveDir, 'firefox']);
+  assert.equal(tar.status, 0, tar.stderr.toString());
+
+  const cachedArchive = path.join(cache, 'firefox', 'firefox-95.0.tar.bz2');
+  mkdirSync(path.dirname(cachedArchive), { recursive: true });
+  writeFileSync(cachedArchive, Buffer.from('interrupted download'));
+
+  const originalFetch = globalThis.fetch;
+  let downloads = 0;
+  globalThis.fetch = async () => {
+    downloads += 1;
+    return new Response(readFileSync(validArchive), {
+      status: 200,
+      headers: { 'content-length': String(readFileSync(validArchive).byteLength) },
+    });
+  };
+
+  try {
+    const provider = new FirefoxProvider() as unknown as {
+      downloadFirefox: (major: number, cacheDir: string) => Promise<{ executablePath: string }>;
+    };
+    const result = await provider.downloadFirefox(95, cache);
+    assert.equal(downloads, 1, 'the corrupt cache entry must be downloaded again');
+    assert.ok(result.executablePath.endsWith(path.join('firefox-95', 'firefox', 'firefox')));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('HistoricalUnavailableError is distinguishable from generic errors', () => {

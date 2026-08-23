@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { EngineName } from '../reporting/types.js';
 import type { BrowserBinary, BrowserVersion } from './types.js';
@@ -137,13 +137,17 @@ export class FirefoxProvider {
     // not an error here — it just means that format wasn't published for this
     // version. Only if BOTH fail do we surface the download error.
     let archive = '';
+    let archiveUrl = '';
+    let reusedArchive = false;
     let ext: 'tar.bz2' | 'tar.xz' = 'tar.bz2';
     let lastErr: unknown = null;
     for (const candidate of candidates) {
       const candidateArchive = path.join(cache, `firefox-${major}.0.${candidate.ext}`);
       try {
-        if (!existsSync(candidateArchive)) await downloadFile(candidate.archiveUrl, candidateArchive);
+        reusedArchive = existsSync(candidateArchive);
+        if (!reusedArchive) await downloadFile(candidate.archiveUrl, candidateArchive);
         archive = candidateArchive;
+        archiveUrl = candidate.archiveUrl;
         ext = candidate.ext;
         lastErr = null;
         break;
@@ -167,7 +171,14 @@ export class FirefoxProvider {
         extractTarXz(archive, extractDir);
       }
     } catch (err) {
-      throw err instanceof Error ? err : new Error(String(err));
+      // An interrupted prior download can leave a plausible-looking archive in
+      // the cache. Replace it once instead of retrying the poisoned file forever.
+      if (!reusedArchive) throw err instanceof Error ? err : new Error(String(err));
+      rmSync(archive, { force: true });
+      await downloadFile(archiveUrl, archive);
+      await cleanDir(extractDir);
+      if (ext === 'tar.bz2') extractTarBz2(archive, extractDir);
+      else extractTarXz(archive, extractDir);
     }
 
     const exe = findFirefoxBinary(extractDir);
