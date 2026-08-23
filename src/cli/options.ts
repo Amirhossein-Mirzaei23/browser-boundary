@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util';
+import { readFileSync } from 'node:fs';
 import type { ScanConfig, SearchStrategy } from '../config/schema.js';
 import type { EngineName } from '../reporting/types.js';
 import { ConfigError } from '../config/resolve.js';
@@ -68,11 +69,7 @@ export function parseCli(
       urls.push(p.startsWith('http') ? p : `${base.replace(/\/$/, '')}${p.startsWith('/') ? '' : '/'}${p}`);
     }
   }
-  if (values.config) {
-    // File config merge is handled by the caller via readFileSync; here we just
-    // surface the path so runScan can load it. Kept simple: not implementing
-    // deep-merge of file+flags in v1; flag/env wins.
-  }
+  const fileConfig = values.config ? readConfigFile(values.config) : {};
 
   const envEngines = env.MRZ_ENGINES ?? env.BC_ENGINES;
   const engines = (values.engines ?? envEngines)?.split(',').map((s) => s.trim().toLowerCase()) as
@@ -98,8 +95,8 @@ export function parseCli(
   const chromiumController = parseChromiumController(
     values['chromium-controller'] ?? env.MRZ_CHROMIUM_CONTROLLER ?? env.BC_CHROMIUM_CONTROLLER,
   );
-  const config: Partial<ScanConfig> = {
-    urls,
+  const cliConfig: Partial<ScanConfig> = {
+    urls: urls.length ? urls : undefined,
     engines: engines?.length ? engines : undefined,
     chromiumController,
     search: {
@@ -120,7 +117,7 @@ export function parseCli(
         : undefined,
     holdOpenSec: num(values['hold-open'] ?? env.MRZ_HOLD_OPEN),
     // Headed is the default; --headless inverts it.
-    headed: headless ? false : true,
+    headed: headless ? false : values.headed ? true : undefined,
     output: {
       format,
       directory: values.output ?? env.MRZ_REPORTS_DIR ?? env.BC_REPORTS_DIR,
@@ -136,7 +133,39 @@ export function parseCli(
     readiness: selectors?.length ? { selectors, mode: (values['readiness-mode'] as 'any' | 'all') ?? 'any' } : undefined,
   };
 
-  return { command: 'scan', url, config: clean(config) as Partial<ScanConfig> };
+  const config = mergeConfig(fileConfig, clean(cliConfig) as Partial<ScanConfig>);
+  return { command: 'scan', url, config };
+}
+
+function readConfigFile(configPath: string): Partial<ScanConfig> {
+  try {
+    const value: unknown = JSON.parse(readFileSync(configPath, 'utf8'));
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('the top-level JSON value must be an object');
+    }
+    return value as Partial<ScanConfig>;
+  } catch (err) {
+    throw new ConfigError(
+      `Could not load config file ${configPath}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+function mergeConfig(file: Partial<ScanConfig>, overrides: Partial<ScanConfig>): Partial<ScanConfig> {
+  return {
+    ...file,
+    ...overrides,
+    search: mergeSection(file.search, overrides.search),
+    output: mergeSection(file.output, overrides.output),
+    analysis: mergeSection(file.analysis, overrides.analysis),
+    readiness: mergeSection(file.readiness, overrides.readiness),
+  };
+}
+
+function mergeSection<T extends object>(base: T | undefined, overrides: T | undefined): T | undefined {
+  if (!base) return overrides;
+  if (!overrides) return base;
+  return { ...base, ...overrides };
 }
 
 function envBool(env: NodeJS.ProcessEnv, name: string): boolean {

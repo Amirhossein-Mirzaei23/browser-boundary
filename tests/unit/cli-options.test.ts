@@ -1,9 +1,34 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { parseCli } from '../../src/cli/options.js';
 import { ConfigError } from '../../src/config/resolve.js';
 
 const URL = 'https://example.com';
+
+test('--config loads a JSON ScanConfig when no positional URL is provided', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'browser-boundary-config-'));
+  const configPath = path.join(dir, 'scan.json');
+  writeFileSync(configPath, JSON.stringify({
+    urls: [URL],
+    engines: ['firefox'],
+    search: { strategy: 'latest' },
+    headed: false,
+    output: { directory: '/tmp/browser-boundary-config-report', format: ['json'] },
+  }));
+
+  const parsed = parseCli(['--config', configPath], {});
+  assert.deepEqual(parsed.config.urls, [URL]);
+  assert.deepEqual(parsed.config.engines, ['firefox']);
+  assert.equal(parsed.config.search?.strategy, 'latest');
+  assert.equal(parsed.config.headed, false);
+  assert.deepEqual(parsed.config.output, {
+    directory: '/tmp/browser-boundary-config-report',
+    format: ['json'],
+  });
+});
 
 test('--versions accepts one exact major and selects explicit search', () => {
   const parsed = parseCli([URL, '--engines', 'chromium', '--versions', '120'], {});

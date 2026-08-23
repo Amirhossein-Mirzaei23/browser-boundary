@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-08-23
+
+### Added
+- `--config <file>` now loads JSON scan configuration, including URLs, engines,
+  search settings, browser mode, and report output settings.
+- CLI and environment configuration is merged with file configuration, with
+  nested search, output, analysis, and readiness sections preserved.
+
+### Fixed
+- Corrupt cached Firefox archives are deleted and downloaded again before
+  extraction is retried, preventing interrupted downloads from poisoning later
+  historical Firefox scans.
+
 ## [1.5.0] - 2026-08-19
 
 ### Added
