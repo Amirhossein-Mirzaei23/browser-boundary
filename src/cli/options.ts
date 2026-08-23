@@ -72,9 +72,8 @@ export function parseCli(
   const fileConfig = values.config ? readConfigFile(values.config) : {};
 
   const envEngines = env.MRZ_ENGINES ?? env.BC_ENGINES;
-  const engines = (values.engines ?? envEngines)?.split(',').map((s) => s.trim().toLowerCase()) as
-    | EngineName[]
-    | undefined;
+  const enginesValue = values.engines ?? envEngines;
+  const engines = parseEngines(enginesValue);
 
   validateEngines(engines);
   const strategy = (values.strategy ?? env.MRZ_STRATEGY) as SearchStrategy | undefined;
@@ -82,9 +81,10 @@ export function parseCli(
   // Headed (visible windows) is the DEFAULT. --headless opts into running
   // invisibly. The MRZ_HEADLESS / BC_HEADLESS env vars do the same.
   const headless = values.headless || envBool(env, 'MRZ_HEADLESS') || envBool(env, 'BC_HEADLESS');
+  const hasVersionsFlag = values.versions !== undefined || values['exact-version'] !== undefined;
   const versionsValue = values.versions ?? values['exact-version'];
-  const explicitVersions = versionsValue
-    ? parseExplicitVersions(versionsValue, values.engines, engines, strategy, latestOnly)
+  const explicitVersions = hasVersionsFlag
+    ? parseExplicitVersions(versionsValue!, values.engines, engines, strategy, latestOnly)
     : undefined;
 
   const format = (values.format ?? env.MRZ_FORMAT)?.split(',').map((s) => s.trim()) as
@@ -101,10 +101,10 @@ export function parseCli(
     chromiumController,
     search: {
       strategy: explicitVersions ? 'explicit' : latestOnly ? 'latest' : strategy,
-      stepSize: num(values['step-size'] ?? env.MRZ_STEP_SIZE ?? env.BC_STEP_SIZE),
+      stepSize: positiveNumber(values['step-size'] ?? env.MRZ_STEP_SIZE ?? env.BC_STEP_SIZE, '--step-size'),
       explicitVersions,
     },
-    timeout: num(values.timeout ?? env.MRZ_TIMEOUT_MS ?? env.BC_TIMEOUT_MS),
+    timeout: positiveNumber(values.timeout ?? env.MRZ_TIMEOUT_MS ?? env.BC_TIMEOUT_MS, '--timeout'),
     waitUntil: (values['wait-until'] ?? env.MRZ_WAIT_UNTIL) as
       | 'domcontentloaded'
       | 'load'
@@ -115,7 +115,7 @@ export function parseCli(
       : envBool(env, 'MRZ_HTTP_CACHE')
         ? false
         : undefined,
-    holdOpenSec: num(values['hold-open'] ?? env.MRZ_HOLD_OPEN),
+    holdOpenSec: positiveNumber(values['hold-open'] ?? env.MRZ_HOLD_OPEN, '--hold-open'),
     // Headed is the default; --headless inverts it.
     headed: headless ? false : values.headed ? true : undefined,
     output: {
@@ -184,6 +184,15 @@ function parseChromiumController(value: string | undefined): 'auto' | 'playwrigh
 
 const VALID_ENGINES: EngineName[] = ['chromium', 'firefox', 'webkit'];
 
+function parseEngines(value: string | undefined): EngineName[] | undefined {
+  if (value === undefined) return undefined;
+  const items = value.split(',').map((item) => item.trim().toLowerCase());
+  if (items.some((item) => item.length === 0)) {
+    throw new ConfigError('--engines must not contain empty values. Valid engines: chromium, firefox, webkit.');
+  }
+  return items as EngineName[];
+}
+
 function validateEngines(engines: EngineName[] | undefined): void {
   const invalid = engines?.find((engine) => !VALID_ENGINES.includes(engine));
   if (invalid) throw new ConfigError(`Unknown engine "${invalid}". Valid engines: chromium, firefox, webkit.`);
@@ -223,10 +232,13 @@ function parseExplicitVersions(
   return { [engine]: versions };
 }
 
-function num(v: string | undefined): number | undefined {
-  if (!v) return undefined;
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? n : undefined;
+function positiveNumber(value: string | undefined, option: string): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new ConfigError(`${option} must be a finite number greater than 0; received "${value}".`);
+  }
+  return parsed;
 }
 
 function clean(obj: Record<string, unknown>): Record<string, unknown> {
