@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parseCli } from '../../src/cli/options.js';
@@ -44,6 +45,20 @@ test('--versions supports the singular --exact-version alias', () => {
 test('--versions accepts a comma-separated list and removes duplicates', () => {
   const parsed = parseCli([URL, '--engines', 'firefox', '--versions', '120,115,120'], {});
   assert.deepEqual(parsed.config.search?.explicitVersions, { firefox: ['120', '115'] });
+});
+
+test('--versions rejects an explicitly empty value', () => {
+  assert.throws(
+    () => parseCli([URL, '--engines', 'chromium', '--versions', ''], {}),
+    (err: unknown) => err instanceof ConfigError && /whole major versions/.test(err.message),
+  );
+});
+
+test('--exact-version rejects an explicitly empty value', () => {
+  assert.throws(
+    () => parseCli([URL, '--engines', 'chromium', '--exact-version', ''], {}),
+    (err: unknown) => err instanceof ConfigError && /whole major versions/.test(err.message),
+  );
 });
 
 test('--versions requires an explicit --engines flag', () => {
@@ -100,6 +115,41 @@ test('--engines rejects unknown engine names', () => {
   );
 });
 
+for (const value of ['', ',', 'chromium,']) {
+  test(`--engines rejects empty list items in ${JSON.stringify(value)}`, () => {
+    assert.throws(
+      () => parseCli([URL, '--engines', value], {}),
+      (err: unknown) => err instanceof ConfigError && /must not contain empty values/.test(err.message),
+    );
+  });
+}
+
+for (const [flag, configPath] of [
+  ['--timeout', 'timeout'],
+  ['--step-size', 'search.stepSize'],
+  ['--hold-open', 'holdOpenSec'],
+] as const) {
+  for (const value of ['0', 'nope', 'Infinity']) {
+    test(`${flag} rejects ${value}`, () => {
+      assert.throws(
+        () => parseCli([URL, flag, value], {}),
+        (err: unknown) =>
+          err instanceof ConfigError && err.message.includes(flag) && /finite number greater than 0/.test(err.message),
+      );
+    });
+  }
+
+  test(`${flag} accepts a positive finite number`, () => {
+    const parsed = parseCli([URL, flag, '12'], {});
+    const actual = configPath === 'timeout'
+      ? parsed.config.timeout
+      : configPath === 'holdOpenSec'
+        ? parsed.config.holdOpenSec
+        : parsed.config.search?.stepSize;
+    assert.equal(actual, 12);
+  });
+}
+
 test('--chromium-controller selects the Chromium controller policy', () => {
   const parsed = parseCli([URL, '--engines', 'chromium', '--chromium-controller', 'webdriver'], {});
   assert.equal(parsed.config.chromiumController, 'webdriver');
@@ -116,3 +166,20 @@ test('--chromium-controller rejects unknown policies', () => {
     (err: unknown) => err instanceof ConfigError && /auto, playwright, webdriver/.test(err.message),
   );
 });
+
+for (const [name, args] of [
+  ['--timeout 0', [URL, '--timeout', '0']],
+  ["--engines ''", [URL, '--engines', '']],
+  ["--versions ''", [URL, '--engines', 'chromium', '--versions', '']],
+] as const) {
+  test(`CLI classifies ${name} as a configuration error`, () => {
+    const result = spawnSync(
+      process.execPath,
+      ['--import', 'tsx', 'src/cli/index.ts', ...args],
+      { cwd: process.cwd(), encoding: 'utf8', timeout: 15_000 },
+    );
+
+    assert.equal(result.status, 2, result.stdout + result.stderr);
+    assert.match(result.stderr, /Configuration error:/);
+  });
+}
