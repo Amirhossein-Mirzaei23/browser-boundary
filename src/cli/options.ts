@@ -34,12 +34,15 @@ const CLI_OPTIONS = {
     versions: { type: 'string' },
     'exact-version': { type: 'string' },
     'chromium-controller': { type: 'string' },
+    'user-agent': { type: 'string' },
 } as const;
 
 export interface ParsedCli {
-  command: 'scan' | 'install' | 'help' | 'version';
+  command: 'scan' | 'install' | 'identify' | 'help' | 'version';
   url: string | null;
   config: Partial<ScanConfig>;
+  userAgent?: string;
+  identifyFormat?: 'text' | 'json';
 }
 
 export function parseCli(
@@ -55,6 +58,52 @@ export function parseCli(
   }
   if (positionals[0] === 'install') {
     return { command: 'install', url: null, config: {} };
+  }
+  if (positionals[0] === 'identify') {
+    if (!values['user-agent']) throw new ConfigError('identify: --user-agent is required.');
+    const identifyPositionals = positionals.slice(1);
+    if (identifyPositionals.some((value) => /^https?:\/\//i.test(value))) {
+      throw new ConfigError('identify cannot be combined with a scan URL.');
+    }
+    if (identifyPositionals.length > 0) {
+      throw new ConfigError(`identify received an unexpected positional argument: ${identifyPositionals[0]}.`);
+    }
+    const conflicting = [
+      ['--engines', values.engines],
+      ['--versions', values.versions],
+      ['--exact-version', values['exact-version']],
+      ['--strategy', values.strategy],
+      ['--latest-only', values['latest-only']],
+      ['--pages', values.pages],
+      ['--base-url', values['base-url']],
+      ['--config', values.config],
+      ['--timeout', values.timeout],
+      ['--wait-until', values['wait-until']],
+      ['--http-cache', values['http-cache']],
+      ['--hold-open', values['hold-open']],
+      ['--step-size', values['step-size']],
+      ['--output', values.output],
+      ['--readiness-selector', values['readiness-selector']],
+      ['--readiness-mode', values['readiness-mode']],
+      ['--min-confidence', values['min-confidence']],
+      ['--chromium-controller', values['chromium-controller']],
+      ['--headless', values.headless],
+      ['--headed', values.headed],
+    ].find(([, value]) => value !== undefined && value !== false);
+    if (conflicting) {
+      throw new ConfigError(`identify cannot be combined with ${conflicting[0]}.`);
+    }
+    const format = values.format ?? 'text';
+    if (format !== 'text' && format !== 'json') {
+      throw new ConfigError('identify --format must be text or json.');
+    }
+    return {
+      command: 'identify',
+      url: null,
+      config: {},
+      userAgent: values['user-agent'],
+      identifyFormat: format,
+    };
   }
 
   const url = positionals.find((p) => /^https?:\/\//i.test(p)) ?? null;
@@ -194,7 +243,12 @@ function parseEngines(value: string | undefined): EngineName[] | undefined {
 }
 
 function validateEngines(engines: EngineName[] | undefined): void {
-  const invalid = engines?.find((engine) => !VALID_ENGINES.includes(engine));
+  const invalid = (engines as string[] | undefined)?.find(
+    (engine) => !VALID_ENGINES.includes(engine as EngineName),
+  );
+  if (invalid === 'android-webview') {
+    throw new ConfigError('android-webview is a runtime target, not an executable engine; use the identify command.');
+  }
   if (invalid) throw new ConfigError(`Unknown engine "${invalid}". Valid engines: chromium, firefox, webkit.`);
 }
 
@@ -260,6 +314,7 @@ browser-boundary — find the oldest browser version your website can actually r
 
 Usage:
   browser-boundary <url> [options]
+  browser-boundary identify --user-agent <ua> [--format text|json]
   browser-boundary <url> --engines chromium,firefox
   browser-boundary <url> --pages /,/dashboard --base-url <url>
   browser-boundary <url> --strategy binary|step-down|latest|explicit
@@ -290,6 +345,11 @@ Options:
   --readiness-mode <m>      any | all (default: any)
   --min-confidence <c>      high|medium|low|unknown threshold for FAIL attribution (default: low)
   --config <file>           config file (JSON)
+  --user-agent <ua>         User-Agent to inspect with the identify command
+
+Identify output:
+  Models Android WebView as a runtime over Blink without launching a browser.
+  Android WebView is intentionally not accepted by --engines.
 
 Environment (MRZ_* and legacy BC_* equivalents supported):
   MRZ_ENGINES, MRZ_LATEST_ONLY, MRZ_STRATEGY, MRZ_TIMEOUT_MS, MRZ_STEP_SIZE,

@@ -5,6 +5,7 @@ import { writeJson, writeMarkdown, type ScanResult } from '../reporting/index.js
 import { ConfigError } from '../config/resolve.js';
 import type { ScanConfig } from '../config/schema.js';
 import { FetchProgressRenderer } from './progress.js';
+import { createAndroidWebViewProfile, detectAndroidWebView } from '../runtimes/index.js';
 
 /**
  * CLI entrypoint. Thin layer over the public scan() API. Exit codes:
@@ -44,6 +45,10 @@ async function main(): Promise<number> {
 
   if (parsed.command === 'install') {
     return runInstall();
+  }
+
+  if (parsed.command === 'identify') {
+    return runIdentify(parsed);
   }
 
   // scan
@@ -97,6 +102,33 @@ async function main(): Promise<number> {
   );
   if (allInconclusive && onlyInfra) return EXIT.INFRA_ERROR;
   return hasVerifiedFail ? EXIT.COMPAT_FAIL : EXIT.OK;
+}
+
+function runIdentify(parsed: ParsedCli): number {
+  const userAgent = parsed.userAgent!;
+  const detection = detectAndroidWebView(userAgent);
+  const output = detection.isAndroidWebView
+    ? createAndroidWebViewProfile({ userAgent })
+    : { runtime: 'unknown', ...detection };
+  if (parsed.identifyFormat === 'json') {
+    console.log(JSON.stringify(output, null, 2));
+    return EXIT.OK;
+  }
+  if (!detection.isAndroidWebView) {
+    console.log('Runtime: unknown');
+    console.log('Android WebView: no');
+    return EXIT.OK;
+  }
+  const profile = output as ReturnType<typeof createAndroidWebViewProfile>;
+  console.log(`Runtime: ${profile.runtime}`);
+  console.log(`Runtime version: ${profile.runtimeVersion.raw ?? 'unknown'}`);
+  console.log(`Rendering engine: ${profile.renderingEngine}`);
+  console.log(`Blink/Chromium baseline: ${profile.engineVersion.major ?? 'unknown'}`);
+  console.log(`Detection confidence: ${profile.detectionConfidence}`);
+  console.log(`Evidence: ${profile.evidence.join(', ')}`);
+  for (const warning of profile.warnings) console.log(`Warning: ${warning}`);
+  console.log('Note: Blink/Chromium compatibility does not guarantee Android WebView runtime compatibility.');
+  return EXIT.OK;
 }
 
 function printSummary(result: ScanResult): void {

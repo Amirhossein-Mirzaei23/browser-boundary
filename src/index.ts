@@ -60,3 +60,6 @@ export { FEATURE_TABLE, formatVersion, meetsThreshold } from './analysis/index.j
 // Low-level engine pieces
 export { runCheck, runCheckWithRetry, type CheckInput } from './core/compatibility-checker.js';
 export { searchBoundary, versionRange } from './core/version-search.js';
+
+// Runtime compatibility profiles (separate from executable scan engines)
+export * from './runtimes/index.js';

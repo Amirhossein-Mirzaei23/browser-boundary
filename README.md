@@ -56,6 +56,65 @@ Browserslist and Can I Use answer a different question. They use declared target
 > [!IMPORTANT]
 > WebKit results use `versionType: "playwright-revision"`. They are not Safari version claims. Historical Safari testing requires matching macOS releases or a device-testing service.
 
+### Android WebView compatibility profiles
+
+Android WebView support is currently **identification and compatibility
+modeling**, not browser execution. Android WebView is a runtime built on
+Chromium/Blink; it is not a fourth rendering engine and it is not equivalent to
+desktop Chrome.
+
+Inspect a User-Agent without launching a browser:
+
+```bash
+browser-boundary identify \
+  --user-agent "Mozilla/5.0 (Linux; Android 10; K; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/140.0.0.0 Mobile Safari/537.36" \
+  --format json
+```
+
+Canonical default WebView User-Agents include the `wv` marker. The
+`Chrome/140...` token supplies the observed Chromium/WebView build; the
+`Version/4.0` token is a compatibility marker and is **not** WebView version 4.
+Applications can replace their WebView User-Agent, so UA identification is
+evidence with a confidence level, not authoritative attestation. Reduced
+default UAs preserve the major but may expose `0.0.0` for lower components.
+Identification has no arbitrary version floor. Direct WebView/Chromium/Blink
+major mapping is used for modern version-numbered releases. Legacy Android 4.4
+WebView is modeled specially: its runtime release is `4.4`, while the UA's
+Chrome token supplies a separate Chromium/Blink milestone (for example 33).
+Conflicting major-version evidence produces `unknown` compatibility rather than
+a compatibility claim.
+
+The TypeScript API keeps the layers separate:
+
+```ts
+import {
+  createAndroidWebViewProfile,
+  evaluateAndroidWebViewFeature,
+} from 'browser-boundary';
+
+const profile = createAndroidWebViewProfile({
+  userAgent: process.env.WEBVIEW_USER_AGENT,
+  // When an Android host can provide it, this is stronger version evidence:
+  nativePackageVersion: process.env.WEBVIEW_PACKAGE_VERSION,
+});
+
+const result = evaluateAndroidWebViewFeature(profile, 'Optional chaining (?.)');
+```
+
+When a WebView major meets an existing Chromium threshold, the result is
+`engine-compatible`: the shared Blink baseline is compatible. This does **not**
+guarantee WebView runtime compatibility. Host `WebSettings`, Android
+permissions, OEM/provider changes, native/AndroidX APIs, and WebView-specific
+behavior remain separate constraints. Use feature detection inside the app when
+possible.
+
+`android-webview` is intentionally not accepted by `--engines`: the current
+scanner cannot launch a real Android WebView. Running desktop Chromium with the
+same major would not prove that Android WebView works. Real execution is future
+work requiring an Android device/emulator, host APK, WebView provider/version
+verification, ADB/Appium or WebView-debugging integration, and Android-specific
+lifecycle management.
+
 ## Quick start
 
 ### 1. Install
@@ -325,6 +384,8 @@ browser-boundary <url> [options]
 | Option | Description |
 | --- | --- |
 | `--engines <list>` | Comma-separated `chromium`, `firefox`, and `webkit`. Default: all. |
+| `identify --user-agent <ua>` | Identify/model an Android WebView UA without launching it. |
+| `--format text\|json` with `identify` | Select human-readable or JSON identification output. |
 | `--pages <list>` | Additional comma-separated paths or URLs. |
 | `--base-url <url>` | Base URL for relative `--pages` values. |
 | `--strategy <name>` | `binary`, `step-down`, or `latest`. |
@@ -583,6 +644,9 @@ No. It finds verified boundaries on the engines and host environments it can lau
 - Old binaries may not start on modern Linux because of sandbox, ABI, or system-library differences.
 - Firefox below 52 cannot be driven through the supported geckodriver path.
 - WebKit is current-only and does not map to a Safari major version.
+- Android WebView support is detection/modeling only; no Android WebView binary, APK, emulator, or device is launched.
+- Chrome/Blink feature compatibility is a baseline, not proof of WebView-specific runtime behavior.
+- Custom WebView User-Agents can cause false negatives, and spoofed WebView markers can cause false positives.
 - Anti-bot systems and WAFs can prevent a result even when the browser is compatible.
 - A pass covers the configured pages and checks, not every route or feature in the site.
 

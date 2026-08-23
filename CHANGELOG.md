@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Additive Android WebView runtime profiles that keep `android-webview` separate
+  from the Blink rendering engine and from the existing executable `EngineName`.
+- Android WebView User-Agent identification with confidence, evidence, version
+  normalization, native/client-hints/explicit evidence precedence, and mismatch
+  warnings.
+- Blink-baseline compatibility results and a sourced WebView-specific capability
+  override registry; meeting a Chromium threshold reports `engine-compatible`,
+  not guaranteed WebView runtime support.
+- `browser-boundary identify --user-agent <ua> --format text|json` for
+  non-executing runtime identification.
+
+### Compatibility
+- Existing Chromium, Firefox, WebKit, CLI scan, provider, report, and public
+  `EngineName` behavior remains unchanged. Android WebView is intentionally not
+  accepted by `--engines` because desktop Chromium is not Android WebView.
+
 ## [1.5.2] - 2026-08-23
 
 ### Added

@@ -1,0 +1,50 @@
+[
+  {
+    "name": "Android 5 WebView 43",
+    "source": "UAParser documented Chrome WebView example",
+    "userAgent": "Mozilla/5.0 (Linux; Android 5.1.1; Nexus 5 Build/LMY48B; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/43.0.2357.65 Mobile Safari/537.36",
+    "expected": { "isAndroidWebView": true, "confidence": "high", "rawVersion": "43.0.2357.65", "major": 43 }
+  },
+  {
+    "name": "Android WebView 67",
+    "source": "Synthetic canonical default-UA fixture",
+    "userAgent": "Mozilla/5.0 (Linux; Android 8.1.0; Pixel 2 Build/OPM1; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/67.0.3396.87 Mobile Safari/537.36",
+    "expected": { "isAndroidWebView": true, "confidence": "high", "rawVersion": "67.0.3396.87", "major": 67 }
+  },
+  {
+    "name": "Android tablet WebView 80",
+    "source": "Synthetic canonical default-UA fixture",
+    "userAgent": "Mozilla/5.0 (Linux; Android 10; SM-T865 Build/QP1A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/80.0.3987.119 Safari/537.36",
+    "expected": { "isAndroidWebView": true, "confidence": "high", "rawVersion": "80.0.3987.119", "major": 80 }
+  },
+  {
+    "name": "Android WebView 100 with app suffix",
+    "source": "Synthetic canonical default-UA fixture",
+    "userAgent": "Mozilla/5.0 (Linux; Android 12; Pixel 6 Build/SP2A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/100.0.4896.127 Mobile Safari/537.36 ExampleApp/2.4",
+    "expected": { "isAndroidWebView": true, "confidence": "high", "rawVersion": "100.0.4896.127", "major": 100 }
+  },
+  {
+    "name": "Android WebView 116",
+    "source": "Synthetic canonical default-UA fixture",
+    "userAgent": "Mozilla/5.0 (Linux; Android 13; Pixel 7 Build/TQ3A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/116.0.5845.92 Mobile Safari/537.36",
+    "expected": { "isAndroidWebView": true, "confidence": "high", "rawVersion": "116.0.5845.92", "major": 116 }
+  },
+  {
+    "name": "Reduced Android WebView 140",
+    "source": "Android Developers WebView UA-reduction format",
+    "userAgent": "Mozilla/5.0 (Linux; Android 10; K; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/140.0.0.0 Mobile Safari/537.36",
+    "expected": { "isAndroidWebView": true, "confidence": "high", "rawVersion": "140.0.0.0", "major": 140 }
+  },
+  {
+    "name": "Legacy marker without wv",
+    "source": "Synthetic legacy/default-like WebView fixture",
+    "userAgent": "Mozilla/5.0 (Linux; Android 4.4.4; Nexus 5 Build/KTU84P) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/37.0.0.0 Mobile Safari/537.36",
+    "expected": { "isAndroidWebView": true, "confidence": "medium", "rawVersion": "37.0.0.0", "major": 37 }
+  },
+  {
+    "name": "WebView marker with missing version",
+    "source": "Synthetic malformed fixture",
+    "userAgent": "Mozilla/5.0 (Linux; Android 13; Pixel; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Mobile Safari/537.36",
+    "expected": { "isAndroidWebView": true, "confidence": "low", "rawVersion": null, "major": null }
+  }
+]
