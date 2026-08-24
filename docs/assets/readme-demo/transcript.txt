@@ -1,0 +1,15 @@
+capture-date: 2026-08-24
+os/arch: linux x64
+node: v22.19.0
+playwright: 1.62.1
+requested-versions: chromium 120 (fail), 121 (pass)
+controller: playwright (CDP)
+identity-methods: executable --version + browser.version()
+versions-cached: true (Chrome-for-Testing builds in the local browser-boundary cache)
+[demo] target served at http://127.0.0.1:<ephemeral-port>/
+[demo] running source CLI: chromium 120,121
+[demo] transcript:
+  chromium 120 [playwright] verdict=fail identity=verified(match)
+  chromium 121 [playwright] verdict=pass identity=verified(match)
+  boundary: adjacent pair verified: oldestVerifiedPassing=121, firstVerifiedFailing=120
+[demo] VERIFIED — execution, identity, compatibility, and report evidence agree.

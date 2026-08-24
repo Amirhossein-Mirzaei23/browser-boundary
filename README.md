@@ -28,6 +28,29 @@ Versions the scanner could not test remain inconclusive. They are never silently
 
 **Why this matters:** a support policy may claim "works on Chrome 90+," while a real scan can verify that Chrome 96 passes and Chrome 95 fails on the routes that matter to your application.
 
+## Real historical demo
+
+This is an **observed** result, reproduced end-to-end from this repository (adjacent, identity-verified majors; see [`examples/readme-demo`](examples/readme-demo/README.md) and the [capture notes](docs/readme-demo/CAPTURE.md)):
+
+![Real Chrome-for-Testing 120 (left, FAIL) and 121 (right, PASS) loading the deterministic demo page](docs/assets/readme-demo/browser-boundary-demo.png)
+
+- Chromium **121** — verified **PASS** (identity verified: requested, on-disk, and live majors match)
+- Chromium **120** — verified **FAIL** (`Array.fromAsync is not a function`), a real compatibility failure, not an infrastructure error
+
+A short recording and the exact verifier transcript are committed alongside: [animation](docs/assets/readme-demo/browser-boundary-demo.gif) · [transcript](docs/assets/readme-demo/transcript.txt). Reproduce it yourself:
+
+```bash
+npm run verify:readme-demo
+```
+
+## Fast Start: a current-browser proof in one command
+
+```bash
+browser-boundary quick https://your-site.example.com/
+```
+
+`quick` gives you a headless, one-URL, current-Chromium result in seconds — explicitly labeled a **current-browser proof, not boundary discovery**, and followed by the exact commands for exact historical verification (Stage 2) and a full multi-engine scan (Stage 3).
+
 ## Why browser-boundary?
 
 | Aspect | browser-boundary |
@@ -152,9 +175,7 @@ The generated `compatibility.md` records the same boundary with the evidence att
 - verified PASS >= 109; verified FAIL at 108
 ```
 
-These values are illustrative, not claims about `www.whatsmybrowser.org`. Your results depend on the target pages, enabled checks, available binaries, and host environment.
-
-<!-- TODO: add terminal recording/screenshot -->
+These values are illustrative, not claims about `www.whatsmybrowser.org`. Your results depend on the target pages, enabled checks, available binaries, and host environment. (The observed demo values above are the exception — they come from the reproducible README demo.)
 
 Want visible proof that the tool launches real builds? Scan a page that displays its own browser version:
 
