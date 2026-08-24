@@ -161,6 +161,8 @@ export interface ScanConfigSnapshot {
   timeoutMs: number;
   headed: boolean;
   latestOnly: boolean;
+  /** True when this scan is a quick current-browser proof, not boundary discovery. */
+  quick: boolean;
   strategy: string;
   stepSize: number;
   versionFloor: Partial<Record<EngineName, number>>;

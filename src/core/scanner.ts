@@ -93,6 +93,7 @@ export class BrowserCompatibilityScanner {
         timeoutMs: cfg.timeout,
         headed: cfg.headed,
         latestOnly: cfg.strategy === 'latest',
+        quick: cfg.quick,
         strategy: cfg.strategy,
         stepSize: cfg.stepSize,
         versionFloor: cfg.floor,

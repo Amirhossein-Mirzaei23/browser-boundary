@@ -37,7 +37,7 @@ const CLI_OPTIONS = {
 } as const;
 
 export interface ParsedCli {
-  command: 'scan' | 'install' | 'help' | 'version';
+  command: 'scan' | 'quick' | 'install' | 'help' | 'version';
   url: string | null;
   config: Partial<ScanConfig>;
 }
@@ -55,6 +55,9 @@ export function parseCli(
   }
   if (positionals[0] === 'install') {
     return { command: 'install', url: null, config: {} };
+  }
+  if (positionals[0] === 'quick') {
+    return parseQuickCli(positionals.slice(1), values, env);
   }
 
   const url = positionals.find((p) => /^https?:\/\//i.test(p)) ?? null;
@@ -135,6 +138,42 @@ export function parseCli(
 
   const config = mergeConfig(fileConfig, clean(cliConfig) as Partial<ScanConfig>);
   return { command: 'scan', url, config };
+}
+
+/**
+ * `quick <url>` — Fast Start: a one-command, headless, one-URL
+ * current-Chromium result. Deliberately NOT historical boundary discovery.
+ * Translated into a normal ScanConfig; no separate scanner behavior.
+ */
+function parseQuickCli(
+  positionals: string[],
+  values: ReturnType<typeof parseArgs>['values'],
+  env: NodeJS.ProcessEnv,
+): ParsedCli {
+  const url = positionals.find((p) => /^https?:\/\//i.test(p));
+  if (!url) throw new ConfigError('quick requires exactly one URL: browser-boundary quick <url>.');
+  if (values.pages) throw new ConfigError('quick accepts exactly one URL and cannot be combined with --pages.');
+  if (values.versions !== undefined || values['exact-version'] !== undefined) {
+    throw new ConfigError('quick tests the current build only and cannot be combined with --versions.');
+  }
+  if (values.strategy) throw new ConfigError('quick uses the latest strategy only and cannot be combined with --strategy.');
+  if (values.engines && values.engines !== 'chromium') {
+    throw new ConfigError('quick is a Chromium-only current-browser proof; use a full scan for other engines.');
+  }
+  return {
+    command: 'quick',
+    url,
+    config: {
+      urls: [url],
+      engines: ['chromium'],
+      search: { strategy: 'latest' },
+      headed: false,
+      quick: true,
+      output: {
+        directory: (values.output as string | undefined) ?? env.MRZ_REPORTS_DIR ?? env.BC_REPORTS_DIR,
+      },
+    },
+  };
 }
 
 function readConfigFile(configPath: string): Partial<ScanConfig> {
@@ -265,6 +304,7 @@ Usage:
   browser-boundary <url> --strategy binary|step-down|latest|explicit
   browser-boundary <url> --engines chromium --versions 120,115,110
   browser-boundary <url> --latest-only
+  browser-boundary quick <url>                   one-command current-Chromium proof (headless)
   browser-boundary install                       install current Playwright browsers
   browser-boundary --help
 

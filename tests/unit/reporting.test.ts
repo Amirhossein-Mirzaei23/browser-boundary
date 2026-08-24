@@ -9,7 +9,7 @@ function sampleResult(): ScanResult {
     pages: ['https://example.com'],
     startedAt: '2026-01-01T00:00:00.000Z',
     finishedAt: '2026-01-01T00:01:00.000Z',
-    config: { timeoutMs: 30000, headed: false, latestOnly: false, strategy: 'binary', stepSize: 10, versionFloor: { chromium: 60 } },
+    config: { timeoutMs: 30000, headed: false, latestOnly: false, quick: false, strategy: 'binary', stepSize: 10, versionFloor: { chromium: 60 } },
     results: [],
     summaries: [
       {
