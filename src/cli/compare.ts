@@ -47,6 +47,11 @@ export async function runCompare(options: CompareOptions): Promise<number> {
     console.log(`  ${writeComparisonMarkdown(comparison, options.output)}`);
   }
 
+  // GitHub-native summary: appended only when running under GitHub Actions
+  // ($GITHUB_STEP_SUMMARY is set by the runner); never alters semantics.
+  const { appendGithubStepSummary } = await import('../reporting/github-summary.js');
+  appendGithubStepSummary(comparison);
+
   const regressed = comparison.engines.some((e) => e.state === 'regressed');
   if (regressed && options.gate) {
     console.error('\nRegression gate FAILED: verified regression against the accepted baseline.');
