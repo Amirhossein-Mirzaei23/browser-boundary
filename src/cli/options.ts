@@ -34,13 +34,24 @@ const CLI_OPTIONS = {
     versions: { type: 'string' },
     'exact-version': { type: 'string' },
     'chromium-controller': { type: 'string' },
+    from: { type: 'string' },
+    force: { type: 'boolean', default: false },
+    baseline: { type: 'string' },
+    'app-id': { type: 'string' },
+    'app-revision': { type: 'string' },
 } as const;
 
-export interface ParsedCli {
-  command: 'scan' | 'quick' | 'install' | 'help' | 'version';
-  url: string | null;
-  config: Partial<ScanConfig>;
-}
+/** Discriminated parsed-command union (baseline options never leak into ScanConfig). */
+export type ParsedCli =
+  | { command: 'scan' | 'quick'; url: string | null; config: Partial<ScanConfig> }
+  | {
+      command: 'baseline-create';
+      from: string;
+      output: string;
+      force: boolean;
+      application?: { id?: string; revision?: string };
+    }
+  | { command: 'install' | 'help' | 'version'; url: null; config: {} };
 
 export function parseCli(
   args: string[] = process.argv.slice(2),
@@ -55,6 +66,27 @@ export function parseCli(
   }
   if (positionals[0] === 'install') {
     return { command: 'install', url: null, config: {} };
+  }
+  if (positionals[0] === 'baseline') {
+    if (positionals[1] !== 'create') {
+      throw new ConfigError("Unknown baseline subcommand. Use: browser-boundary baseline create --from <report.json> --output <baseline.json>");
+    }
+    if (!values.from) throw new ConfigError('baseline create requires --from <compatibility.json> (a completed scan report).');
+    if (!values.output) throw new ConfigError('baseline create requires --output <baseline.json> (where to write the accepted baseline).');
+    const application: { id?: string; revision?: string } | undefined =
+      values['app-id'] || values['app-revision']
+        ? {
+            ...(values['app-id'] ? { id: values['app-id'] } : {}),
+            ...(values['app-revision'] ? { revision: values['app-revision'] } : {}),
+          }
+        : undefined;
+    return {
+      command: 'baseline-create',
+      from: values.from,
+      output: values.output,
+      force: values.force === true,
+      ...(application ? { application } : {}),
+    };
   }
   if (positionals[0] === 'quick') {
     return parseQuickCli(positionals.slice(1), values, env);
@@ -305,6 +337,8 @@ Usage:
   browser-boundary <url> --engines chromium --versions 120,115,110
   browser-boundary <url> --latest-only
   browser-boundary quick <url>                   one-command current-Chromium proof (headless)
+  browser-boundary baseline create --from ./reports/compatibility.json --output ./browser-boundary.baseline.json
+                                                 accept a completed scan as a baseline (explicit, reviewable; never rewritten by comparison)
   browser-boundary install                       install current Playwright browsers
   browser-boundary --help
 
@@ -330,6 +364,10 @@ Options:
   --readiness-mode <m>      any | all (default: any)
   --min-confidence <c>      high|medium|low|unknown threshold for FAIL attribution (default: low)
   --config <file>           config file (JSON)
+  --from <report.json>      baseline create: completed scan report to accept
+  --app-id <id>             baseline create: application id recorded in the baseline
+  --app-revision <rev>      baseline create: application revision recorded in the baseline
+  --force                   baseline create: explicitly replace an existing baseline file
 
 Environment (MRZ_* and legacy BC_* equivalents supported):
   MRZ_ENGINES, MRZ_LATEST_ONLY, MRZ_STRATEGY, MRZ_TIMEOUT_MS, MRZ_STEP_SIZE,

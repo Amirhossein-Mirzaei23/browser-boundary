@@ -6,6 +6,7 @@ import { ConfigError } from '../config/resolve.js';
 import type { ScanConfig } from '../config/schema.js';
 import { FetchProgressRenderer } from './progress.js';
 import { QUICK_LABEL, quickNextActions } from './quick.js';
+import { runBaselineCreate } from './baseline.js';
 
 /**
  * CLI entrypoint. Thin layer over the public scan() API. Exit codes:
@@ -45,6 +46,15 @@ async function main(): Promise<number> {
 
   if (parsed.command === 'install') {
     return runInstall();
+  }
+
+  if (parsed.command === 'baseline-create') {
+    return runBaselineCreate(parsed);
+  }
+
+  // scan / quick only (help, version, install, baseline-create returned above)
+  if (parsed.command !== 'scan' && parsed.command !== 'quick') {
+    return EXIT.CONFIG_ERROR;
   }
 
   // scan (or quick — a scan translated by the options layer)
