@@ -453,6 +453,8 @@ Problem-oriented content and the README demo create discovery and trust. Fast St
 
 ## Metrics and Measurement
 
+Canonical metric and event definitions (activation events, exclusions, and the manual evaluator worksheet) live in [`MEASUREMENT_DEFINITIONS.md`](MEASUREMENT_DEFINITIONS.md).
+
 ### Weak or vanity signals
 
 - npm downloads;
