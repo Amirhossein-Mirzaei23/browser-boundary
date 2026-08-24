@@ -166,8 +166,9 @@ test('writeBaseline is non-destructive without force and validates on read', () 
 test('output JSON ends with a newline and has stable ordering', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'bb-baseline-'));
   const file = path.join(dir, 'baseline.json');
-  writeBaseline(file, createBaseline(chromiumScan()));
-  writeBaseline(path.join(dir, 'b2.json'), createBaseline(chromiumScan()), { force: true });
+  const baseline = createBaseline(chromiumScan()); // one artifact, written twice
+  writeBaseline(file, baseline);
+  writeBaseline(path.join(dir, 'b2.json'), baseline, { force: true });
   const a = readFileSync(file, 'utf8');
   const b = readFileSync(path.join(dir, 'b2.json'), 'utf8');
   assert.ok(a.endsWith('\n'));

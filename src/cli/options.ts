@@ -58,6 +58,7 @@ export type ParsedCli =
       baseline: string;
       current: string;
       gate: boolean;
+      output?: string;
     }
   | { command: 'install' | 'help' | 'version'; url: null; config: {} };
 
@@ -83,6 +84,7 @@ export function parseCli(
       baseline: values.baseline,
       current: values.current,
       gate: values.gate === true,
+      ...(values.output ? { output: values.output } : {}),
     };
   }
   if (positionals[0] === 'baseline') {

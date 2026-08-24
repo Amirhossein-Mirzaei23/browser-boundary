@@ -14,6 +14,8 @@ export interface CompareOptions {
   baseline: string;
   current: string;
   gate: boolean;
+  /** When set, comparison.json/comparison.md are written to this directory. */
+  output?: string;
 }
 
 export async function runCompare(options: CompareOptions): Promise<number> {
@@ -37,6 +39,13 @@ export async function runCompare(options: CompareOptions): Promise<number> {
 
   const comparison = compareScanToBaseline(baselineResult.baseline, scan);
   printComparison(comparison, options.gate);
+
+  if (options.output) {
+    const { writeComparisonJson, writeComparisonMarkdown } = await import('../reporting/index.js');
+    console.log('\nReports:');
+    console.log(`  ${writeComparisonJson(comparison, options.output)}`);
+    console.log(`  ${writeComparisonMarkdown(comparison, options.output)}`);
+  }
 
   const regressed = comparison.engines.some((e) => e.state === 'regressed');
   if (regressed && options.gate) {

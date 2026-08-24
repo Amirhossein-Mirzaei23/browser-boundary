@@ -52,7 +52,7 @@ export type {
   FeatureFinding,
   VersionType,
 } from './reporting/types.js';
-export { writeJson, writeMarkdown, renderMarkdown } from './reporting/index.js';
+export { writeJson, writeMarkdown, renderMarkdown, renderComparisonJson, writeComparisonJson, renderComparisonMarkdown, writeComparisonMarkdown } from './reporting/index.js';
 export type {
   ComparisonState,
   NormalizedReadiness,
