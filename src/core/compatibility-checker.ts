@@ -15,6 +15,8 @@ import { analyzeSignals } from '../analysis/error-analyzer.js';
 import { classifyFailedRequest } from '../detection/index.js';
 import { withRetry, isTransientReason } from './retry.js';
 import { controllerFor } from '../controllers/index.js';
+import { buildIdentityEvidence, readExecutableIdentity, type RawControllerIdentity } from '../browsers/identity.js';
+import type { BrowserIdentityEvidence } from '../reporting/types.js';
 
 /**
  * Runs ONE (engine, version, page) check using a REAL browser binary and
@@ -60,13 +62,77 @@ export async function runCheck(input: CheckInput): Promise<CheckResult> {
   let screenshotPath: string | null = null;
   let tracePath: string | null = null;
   let finding: CheckResult['finding'] = null;
+  let identity: BrowserIdentityEvidence = buildIdentityEvidence({
+    requestedVersion: version,
+    requestedEngine: engine,
+    versionType,
+    executable: null,
+    runtime: null,
+  });
+  let controllerKind: 'playwright' | 'webdriver' = binary.controller ?? 'playwright';
+
+  /** Assemble the CheckResult; called on every exit path so identity/controller evidence is always retained. */
+  const result = (): CheckResult => ({
+    engine,
+    version,
+    versionType,
+    buildLabel: binary.buildLabel,
+    executablePath: binary.executablePath,
+    url: page.url,
+    verdict,
+    reason,
+    identity,
+    controller: controllerKind,
+    signals: {
+      navigationError,
+      jsErrors,
+      consoleErrors: consoleMsgs,
+      failedRequests,
+      rendered,
+      renderedSelectors,
+      readyMs,
+    },
+    artifacts: { screenshotPath, tracePath },
+    finding,
+    limitationNote: binary.limitationNote,
+    durationMs: Date.now() - started,
+  });
 
   const controller = await controllerFor(binary);
+  controllerKind = controller.kind;
   let session: Awaited<ReturnType<typeof controller.launch>> | null = null;
   let finalizationStarted = false;
 
   try {
     session = await controller.launch(binary, config);
+
+    // --- Identity honesty gate: verify who actually launched BEFORE navigating ---
+    const executableIdentity =
+      versionType === 'real-major' ? readExecutableIdentity(binary.executablePath) : null;
+    let runtimeIdentity: RawControllerIdentity | null = null;
+    try {
+      runtimeIdentity = await session.getIdentity();
+    } catch {
+      runtimeIdentity = null; // evidence below marks the check inconclusive
+    }
+    identity = buildIdentityEvidence({
+      requestedVersion: version,
+      requestedEngine: engine,
+      versionType,
+      executable: executableIdentity,
+      runtime: runtimeIdentity,
+    });
+    if (!identity.verified) {
+      // Never execute compatibility checks under a mismatched requested label.
+      verdict = 'inconclusive';
+      reason = `Browser identity could not be verified (${identity.mismatchReason}); no compatibility checks were executed.`;
+      finalizationStarted = true;
+      await finalizeSession(session, config);
+      session = null;
+      return result();
+
+    }
+
     await session.startTrace();
 
     if (config.disableHttpCache) {
@@ -169,29 +235,7 @@ export async function runCheck(input: CheckInput): Promise<CheckResult> {
     }
   }
 
-  return {
-    engine,
-    version,
-    versionType,
-    buildLabel: binary.buildLabel,
-    executablePath: binary.executablePath,
-    url: page.url,
-    verdict,
-    reason,
-    signals: {
-      navigationError,
-      jsErrors,
-      consoleErrors: consoleMsgs,
-      failedRequests,
-      rendered,
-      renderedSelectors,
-      readyMs,
-    },
-    artifacts: { screenshotPath, tracePath },
-    finding,
-    limitationNote: binary.limitationNote,
-    durationMs: Date.now() - started,
-  };
+  return result();
 }
 
 /** Run a check with transient-retry. Definitive pass/fail is never retried. */

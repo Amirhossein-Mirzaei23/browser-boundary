@@ -94,6 +94,24 @@ export interface CheckArtifacts {
   tracePath: string | null;
 }
 
+/**
+ * Verified identity evidence for one check: what was requested, what the
+ * on-disk executable reports, and what the live session reports. A check is
+ * only trustworthy when these agree (within the correct version domain).
+ */
+export interface BrowserIdentityEvidence {
+  requestedVersion: string;
+  requestedEngine: EngineName;
+  executableVersion: string | null;
+  executableEngine: string | null;
+  runtimeVersion: string | null;
+  runtimeEngine: string | null;
+  executableMethod: string;
+  runtimeMethod: string;
+  verified: boolean;
+  mismatchReason: string | null;
+}
+
 /** The full result of one (engine, version, page) check. */
 export interface CheckResult {
   engine: EngineName;
@@ -104,6 +122,8 @@ export interface CheckResult {
   url: string;
   verdict: Verdict;
   reason: string;
+  identity: BrowserIdentityEvidence;
+  controller: 'playwright' | 'webdriver';
   signals: CheckSignals;
   artifacts: CheckArtifacts;
   /** Feature attribution, if any (may be present even on inconclusive results). */
