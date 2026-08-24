@@ -58,6 +58,10 @@ Browserslist and Can I Use answer a different question. They use declared target
 
 ### Android WebView compatibility profiles
 
+For a complete usage guide covering the CLI, TypeScript API, detection model,
+version semantics, compatibility states, limitations, and future real-device
+execution, see [ANDROID_WEBVIEW.md](./ANDROID_WEBVIEW.md).
+
 Android WebView support is currently **identification and compatibility
 modeling**, not browser execution. Android WebView is a runtime built on
 Chromium/Blink; it is not a fourth rendering engine and it is not equivalent to
