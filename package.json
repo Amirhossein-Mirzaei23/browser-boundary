@@ -50,6 +50,8 @@
     "scan:firefox": "MRZ_ENGINES=firefox tsx src/cli/index.ts",
     "scan:webkit": "MRZ_ENGINES=webkit tsx src/cli/index.ts",
     "test": "node --test --import tsx tests/unit/**/*.test.ts",
+    "demo:readme": "tsx examples/readme-demo/server.ts",
+    "test:readme-demo": "node --test --import tsx tests/integration/readme-demo.test.ts",
     "test:integration": "playwright test",
     "test:headed": "playwright test --headed",
     "test:fixtures": "node --test --import tsx tests/integration/**/*.test.ts",
