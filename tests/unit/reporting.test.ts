@@ -18,6 +18,21 @@ function sampleResult(): ScanResult {
       routes: [{ url: 'https://example.com', label: 'home', readiness: 'none' }],
       checks: { navigation: true, javascript: true, console: true, network: true, rendering: true, readiness: true },
     },
+    scope: {
+      routes: [{ url: 'https://example.com', label: 'home', readiness: { kind: 'none' } }],
+      checks: { navigation: true, javascript: true, console: true, network: true, rendering: true, readiness: true },
+      engines: ['chromium'],
+      controllerPolicy: 'auto',
+      minConfidence: 'low',
+      floors: { chromium: 60 },
+      ignoredPatterns: [],
+      criticalResourceTypes: [],
+      timeoutMs: 30000,
+      waitUntil: 'domcontentloaded',
+      viewport: { width: 1366, height: 768 },
+      nonPortable: [],
+    },
+    configFingerprint: 'a'.repeat(64),
     results: [],
     summaries: [
       {

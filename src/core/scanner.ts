@@ -25,6 +25,7 @@ import { runCheckWithRetry } from './compatibility-checker.js';
 import { searchBoundary, versionRange } from './version-search.js';
 import { aggregateFeatureFindings } from '../analysis/error-analyzer.js';
 import { VERSION } from '../cli/version.js';
+import { normalizeScanScope, scopeFingerprint } from '../baseline/normalize.js';
 
 /**
  * BrowserCompatibilityScanner — the public orchestrator.
@@ -112,6 +113,8 @@ export class BrowserCompatibilityScanner {
         })),
         checks: cfg.checks,
       },
+      scope: normalizeScanScope(cfg),
+      configFingerprint: scopeFingerprint(normalizeScanScope(cfg)),
       results,
       summaries,
       featureFindings,

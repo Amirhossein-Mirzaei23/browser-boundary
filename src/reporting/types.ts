@@ -200,6 +200,10 @@ export interface ScanResult {
   config: ScanConfigSnapshot;
   /** Scan provenance (package, platform, routes, checks) for baseline comparison. */
   provenance: ScanProvenance;
+  /** Canonical normalized comparison scope (see src/baseline/normalize.ts). */
+  scope: import('../baseline/types.js').NormalizedScanScope;
+  /** sha256 digest of the canonical scope. */
+  configFingerprint: string;
   results: CheckResult[];
   summaries: EngineSummary[];
   featureFindings: FeatureFinding[];
