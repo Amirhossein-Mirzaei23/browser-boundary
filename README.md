@@ -47,6 +47,9 @@ Browserslist and Can I Use answer a different question. They use declared target
 
 ## Browser coverage
 
+> [!NOTE]
+> See the full [capability matrix](docs/CAPABILITY_MATRIX.md) for controller, version-domain, platform, and optional-dependency constraints — including which combinations are validated, best-effort, or unsupported — **before** paying any historical download cost.
+
 | Engine | Coverage | Automation |
 | --- | --- | --- |
 | Chromium | Major 67 to current | WebDriver for historical Chromium snapshots; Playwright for current Chrome for Testing |
