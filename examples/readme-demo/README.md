@@ -27,13 +27,19 @@ The pair was validated by launching the real binaries through `runCheck` — not
 
 ## Reproducing
 
+The demo verification workflow reproduces the whole boundary through the real source CLI and fails unless execution, identity, compatibility, and report evidence all agree:
+
 ```bash
-npm run demo:readme &          # serve the target on 127.0.0.1:4317
-npm run scan -- --url http://127.0.0.1:4317/ --engine chromium \
-  --exact-versions 120,121     # exact flags may differ; see CLI --help
+npm run verify:readme-demo          # exit 0 = all four proof levels verified
+npm run verify:readme-demo -- --keep-output   # keep the generated compatibility.json
 ```
 
-The demo verification workflow (`scripts/verify-readme-demo.ts`, Task 4) automates the pair validation end to end.
+Manual route:
+
+```bash
+npm run demo:readme &          # serve the target on 127.0.0.1:4317
+npm run scan -- --url http://127.0.0.1:4317/ --engines chromium --versions 120,121 --headless --format json
+```
 
 ## Server API
 

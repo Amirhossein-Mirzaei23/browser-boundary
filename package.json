@@ -52,6 +52,7 @@
     "test": "node --test --import tsx tests/unit/**/*.test.ts",
     "demo:readme": "tsx examples/readme-demo/server.ts",
     "test:readme-demo": "node --test --import tsx tests/integration/readme-demo.test.ts",
+    "verify:readme-demo": "tsx scripts/verify-readme-demo.ts",
     "test:integration": "playwright test",
     "test:headed": "playwright test --headed",
     "test:fixtures": "node --test --import tsx tests/integration/**/*.test.ts",
