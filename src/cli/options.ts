@@ -39,6 +39,8 @@ const CLI_OPTIONS = {
     baseline: { type: 'string' },
     'app-id': { type: 'string' },
     'app-revision': { type: 'string' },
+    current: { type: 'string' },
+    gate: { type: 'boolean', default: false },
 } as const;
 
 /** Discriminated parsed-command union (baseline options never leak into ScanConfig). */
@@ -50,6 +52,12 @@ export type ParsedCli =
       output: string;
       force: boolean;
       application?: { id?: string; revision?: string };
+    }
+  | {
+      command: 'compare';
+      baseline: string;
+      current: string;
+      gate: boolean;
     }
   | { command: 'install' | 'help' | 'version'; url: null; config: {} };
 
@@ -66,6 +74,16 @@ export function parseCli(
   }
   if (positionals[0] === 'install') {
     return { command: 'install', url: null, config: {} };
+  }
+  if (positionals[0] === 'compare') {
+    if (!values.baseline) throw new ConfigError('compare requires --baseline <baseline.json> (the accepted baseline).');
+    if (!values.current) throw new ConfigError('compare requires --current <compatibility.json> (the current scan report).');
+    return {
+      command: 'compare',
+      baseline: values.baseline,
+      current: values.current,
+      gate: values.gate === true,
+    };
   }
   if (positionals[0] === 'baseline') {
     if (positionals[1] !== 'create') {

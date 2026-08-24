@@ -7,6 +7,8 @@ import type { ScanConfig } from '../config/schema.js';
 import { FetchProgressRenderer } from './progress.js';
 import { QUICK_LABEL, quickNextActions } from './quick.js';
 import { runBaselineCreate } from './baseline.js';
+import { runCompare } from './compare.js';
+import { EXIT } from './exit-codes.js';
 
 /**
  * CLI entrypoint. Thin layer over the public scan() API. Exit codes:
@@ -17,13 +19,6 @@ import { runBaselineCreate } from './baseline.js';
  *
  * This file is what `bin/browser-boundary` resolves to after build.
  */
-
-const EXIT = {
-  OK: 0,
-  COMPAT_FAIL: 1,
-  CONFIG_ERROR: 2,
-  INFRA_ERROR: 3,
-} as const;
 
 async function main(): Promise<number> {
   let parsed: ParsedCli;
@@ -50,6 +45,10 @@ async function main(): Promise<number> {
 
   if (parsed.command === 'baseline-create') {
     return runBaselineCreate(parsed);
+  }
+
+  if (parsed.command === 'compare') {
+    return runCompare(parsed);
   }
 
   // scan / quick only (help, version, install, baseline-create returned above)
