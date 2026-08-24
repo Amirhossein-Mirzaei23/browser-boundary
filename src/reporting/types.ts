@@ -168,6 +168,28 @@ export interface ScanConfigSnapshot {
   versionFloor: Partial<Record<EngineName, number>>;
 }
 
+/** Where and how a scan ran — retained for baseline provenance. */
+export interface ScanProvenance {
+  packageVersion: string;
+  os: string;
+  arch: string;
+  controllerPolicy: 'auto' | 'playwright' | 'webdriver';
+  /** Normalized route labels and readiness policy per route. */
+  routes: Array<{
+    url: string;
+    label: string;
+    readiness: 'selectors' | 'none' | 'non-portable-function';
+  }>;
+  checks: {
+    navigation: boolean;
+    javascript: boolean;
+    console: boolean;
+    network: boolean;
+    rendering: boolean;
+    readiness: boolean;
+  };
+}
+
 /** The complete output of one scan. */
 export interface ScanResult {
   /** Best-effort site label (first URL's origin, or a provided siteName). */
@@ -176,6 +198,8 @@ export interface ScanResult {
   startedAt: string;
   finishedAt: string;
   config: ScanConfigSnapshot;
+  /** Scan provenance (package, platform, routes, checks) for baseline comparison. */
+  provenance: ScanProvenance;
   results: CheckResult[];
   summaries: EngineSummary[];
   featureFindings: FeatureFinding[];

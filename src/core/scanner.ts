@@ -1,3 +1,4 @@
+import os from 'node:os';
 import type {
   CheckResult,
   Confidence,
@@ -23,6 +24,7 @@ import { checkEngineDeps } from './dependencies.js';
 import { runCheckWithRetry } from './compatibility-checker.js';
 import { searchBoundary, versionRange } from './version-search.js';
 import { aggregateFeatureFindings } from '../analysis/error-analyzer.js';
+import { VERSION } from '../cli/version.js';
 
 /**
  * BrowserCompatibilityScanner — the public orchestrator.
@@ -97,6 +99,18 @@ export class BrowserCompatibilityScanner {
         strategy: cfg.strategy,
         stepSize: cfg.stepSize,
         versionFloor: cfg.floor,
+      },
+      provenance: {
+        packageVersion: VERSION,
+        os: os.platform(),
+        arch: os.arch(),
+        controllerPolicy: cfg.chromiumController,
+        routes: cfg.pages.map((p) => ({
+          url: p.url,
+          label: p.label ?? p.url,
+          readiness: readinessKindOf(p.readiness),
+        })),
+        checks: cfg.checks,
       },
       results,
       summaries,
@@ -298,6 +312,13 @@ export class BrowserCompatibilityScanner {
 /** Top-level convenience function (preferred for most users). */
 export async function scan(input: ScanConfig, progress?: ScanProgress): Promise<ScanResult> {
   return BrowserCompatibilityScanner.scan(input, progress);
+}
+
+/** Readiness policy class for provenance (function readiness is non-portable). */
+function readinessKindOf(readiness: unknown): 'selectors' | 'none' | 'non-portable-function' {
+  if (!readiness) return 'none';
+  if (typeof readiness === 'function') return 'non-portable-function';
+  return 'selectors';
 }
 
 function resultLineFor(oldest: string | null, firstFail: string | null): string {

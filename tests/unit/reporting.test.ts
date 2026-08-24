@@ -10,6 +10,14 @@ function sampleResult(): ScanResult {
     startedAt: '2026-01-01T00:00:00.000Z',
     finishedAt: '2026-01-01T00:01:00.000Z',
     config: { timeoutMs: 30000, headed: false, latestOnly: false, quick: false, strategy: 'binary', stepSize: 10, versionFloor: { chromium: 60 } },
+    provenance: {
+      packageVersion: '1.5.2',
+      os: 'linux',
+      arch: 'x64',
+      controllerPolicy: 'auto',
+      routes: [{ url: 'https://example.com', label: 'home', readiness: 'none' }],
+      checks: { navigation: true, javascript: true, console: true, network: true, rendering: true, readiness: true },
+    },
     results: [],
     summaries: [
       {

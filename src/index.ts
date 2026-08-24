@@ -53,6 +53,16 @@ export type {
   VersionType,
 } from './reporting/types.js';
 export { writeJson, writeMarkdown, renderMarkdown } from './reporting/index.js';
+export type {
+  ComparisonState,
+  NormalizedReadiness,
+  NormalizedRoute,
+  NormalizedScanScope,
+  BaselineIdentityEvidence,
+  BaselineEngineEntry,
+  BoundaryBaseline,
+} from './baseline/types.js';
+export { validateBaseline, BASELINE_SCHEMA_VERSION } from './baseline/schema.js';
 
 // Analysis (for advanced consumers)
 export { FEATURE_TABLE, formatVersion, meetsThreshold } from './analysis/index.js';
