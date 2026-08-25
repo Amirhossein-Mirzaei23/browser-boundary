@@ -517,6 +517,8 @@ Current-browser checks are a practical fast gate for pull requests. CI uses the 
 
 Use a historical boundary scan on a schedule or before releases when downloading multiple browser builds would make every pull request too slow.
 
+For recurring protection, copy the **official baseline workflow** ([`docs/ci/github-actions.yml`](docs/ci/github-actions.yml)) — it adds browser caching, a committed reviewed baseline, and a conservative `compare --gate` step that fails **only for verified regressions** (inconclusive or infrastructure-only outcomes never fail the build), plus a GitHub Step Summary and report artifacts. The acceptance flow (scan → review → `baseline create` → commit → compare) is documented in [`docs/CI_BASELINE_WORKFLOW.md`](docs/CI_BASELINE_WORKFLOW.md); re-baselining is always a separate reviewed change.
+
 ### Sandboxing and containers
 
 You do not need root or a privileged container to run a scan. Chromium launches with `--no-sandbox` and `--disable-dev-shm-usage` for compatibility with common CI containers. Because disabling Chromium's sandbox reduces process isolation, run scans in an isolated, short-lived CI worker and avoid exposing secrets to the browser process.
