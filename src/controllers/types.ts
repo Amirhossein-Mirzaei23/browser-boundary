@@ -1,4 +1,5 @@
 import type { BrowserBinary } from '../browsers/types.js';
+import type { RawControllerIdentity } from '../browsers/identity.js';
 import type { JsError, Verdict } from '../reporting/types.js';
 import type { ResolvedConfig, ResolvedPage } from '../config/resolve.js';
 
@@ -51,6 +52,8 @@ export interface ReadinessOutcome {
 export interface ControllerSession {
   /** Re-write request headers to defeat the browser HTTP cache. */
   disableCache(): Promise<void>;
+  /** Report the live session's engine/version identity (protocol-specific). */
+  getIdentity(): Promise<RawControllerIdentity>;
   /** Wire the protocol's error/console/network events into the sinks. */
   attachCollectors(sinks: SignalSinks): Promise<void>;
   /** Navigate to url. Never throws on nav failure — returns a GotoResult. */

@@ -7,6 +7,10 @@ import path from 'node:path';
 import { parseCli } from '../../src/cli/options.js';
 import { ConfigError } from '../../src/config/resolve.js';
 
+const cfgOf = (p: ReturnType<typeof parseCli>): Partial<import('../../src/config/schema.js').ScanConfig> =>
+  (p as { config: Partial<import('../../src/config/schema.js').ScanConfig> }).config;
+
+
 const URL = 'https://example.com';
 
 test('--config loads a JSON ScanConfig when no positional URL is provided', () => {
@@ -21,11 +25,12 @@ test('--config loads a JSON ScanConfig when no positional URL is provided', () =
   }));
 
   const parsed = parseCli(['--config', configPath], {});
-  assert.deepEqual(parsed.config.urls, [URL]);
-  assert.deepEqual(parsed.config.engines, ['firefox']);
-  assert.equal(parsed.config.search?.strategy, 'latest');
-  assert.equal(parsed.config.headed, false);
-  assert.deepEqual(parsed.config.output, {
+  assert.equal(parsed.command, 'scan');
+  assert.deepEqual((parsed as { config: Record<string, unknown> }).config.urls, [URL]);
+  assert.deepEqual(cfgOf(parsed).engines, ['firefox']);
+  assert.equal(cfgOf(parsed).search?.strategy, 'latest');
+  assert.equal(cfgOf(parsed).headed, false);
+  assert.deepEqual(cfgOf(parsed).output, {
     directory: '/tmp/browser-boundary-config-report',
     format: ['json'],
   });
@@ -33,18 +38,18 @@ test('--config loads a JSON ScanConfig when no positional URL is provided', () =
 
 test('--versions accepts one exact major and selects explicit search', () => {
   const parsed = parseCli([URL, '--engines', 'chromium', '--versions', '120'], {});
-  assert.equal(parsed.config.search?.strategy, 'explicit');
-  assert.deepEqual(parsed.config.search?.explicitVersions, { chromium: ['120'] });
+  assert.equal(cfgOf(parsed).search?.strategy, 'explicit');
+  assert.deepEqual(cfgOf(parsed).search?.explicitVersions, { chromium: ['120'] });
 });
 
 test('--versions supports the singular --exact-version alias', () => {
   const parsed = parseCli([URL, '--engines', 'chromium', '--exact-version', '120'], {});
-  assert.deepEqual(parsed.config.search?.explicitVersions, { chromium: ['120'] });
+  assert.deepEqual(cfgOf(parsed).search?.explicitVersions, { chromium: ['120'] });
 });
 
 test('--versions accepts a comma-separated list and removes duplicates', () => {
   const parsed = parseCli([URL, '--engines', 'firefox', '--versions', '120,115,120'], {});
-  assert.deepEqual(parsed.config.search?.explicitVersions, { firefox: ['120', '115'] });
+  assert.deepEqual(cfgOf(parsed).search?.explicitVersions, { firefox: ['120', '115'] });
 });
 
 test('--versions rejects an explicitly empty value', () => {
@@ -98,7 +103,7 @@ test('--versions rejects versions below the engine floor', () => {
 
 test('--versions accepts Chromium 67 as the supported floor', () => {
   const parsed = parseCli(['https://www.whatsmybrowser.org/', '--engines', 'chromium', '--versions', '67'], {});
-  assert.deepEqual(parsed.config.search?.explicitVersions, { chromium: ['67'] });
+  assert.deepEqual(cfgOf(parsed).search?.explicitVersions, { chromium: ['67'] });
 });
 
 test('--versions cannot be combined with another strategy', () => {
@@ -142,22 +147,22 @@ for (const [flag, configPath] of [
   test(`${flag} accepts a positive finite number`, () => {
     const parsed = parseCli([URL, flag, '12'], {});
     const actual = configPath === 'timeout'
-      ? parsed.config.timeout
+      ? cfgOf(parsed).timeout
       : configPath === 'holdOpenSec'
-        ? parsed.config.holdOpenSec
-        : parsed.config.search?.stepSize;
+        ? cfgOf(parsed).holdOpenSec
+        : cfgOf(parsed).search?.stepSize;
     assert.equal(actual, 12);
   });
 }
 
 test('--chromium-controller selects the Chromium controller policy', () => {
   const parsed = parseCli([URL, '--engines', 'chromium', '--chromium-controller', 'webdriver'], {});
-  assert.equal(parsed.config.chromiumController, 'webdriver');
+  assert.equal(cfgOf(parsed).chromiumController, 'webdriver');
 });
 
 test('MRZ_CHROMIUM_CONTROLLER configures the Chromium controller policy', () => {
   const parsed = parseCli([URL, '--engines', 'chromium'], { MRZ_CHROMIUM_CONTROLLER: 'playwright' });
-  assert.equal(parsed.config.chromiumController, 'playwright');
+  assert.equal(cfgOf(parsed).chromiumController, 'playwright');
 });
 
 test('--chromium-controller rejects unknown policies', () => {

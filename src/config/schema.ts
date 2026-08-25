@@ -37,6 +37,12 @@ export interface ScanConfig {
   chromiumController?: ChromiumControllerPolicy;
   /** A human site name used in report titles (defaults to first URL origin). */
   siteName?: string;
+  /**
+   * True when this scan is a Fast Start current-browser proof (`quick`):
+   * one URL, current Chromium only, headless. Distinct from boundary
+   * discovery; reports must label it as such.
+   */
+  quick?: boolean;
 
   search?: {
     strategy?: SearchStrategy;

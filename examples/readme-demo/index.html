@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>browser-boundary demo target</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
+    .status { font-size: 1.4rem; font-weight: 700; padding: .75rem 1rem; border-radius: .5rem; margin: 1rem 0; }
+    .status.pass { background: #16a34a22; color: #16a34a; }
+    .status.fail { background: #dc262622; color: #dc2626; }
+    code { background: rgba(127,127,127,.15); padding: .1rem .35rem; border-radius: .25rem; }
+    .ua { word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>Deterministic compatibility demo</h1>
+  <p>
+    This page is served from <code>127.0.0.1</code> only and makes zero external requests.
+    Its script calls <code>Array.fromAsync()</code>, which first shipped in
+    Chromium&nbsp;121. Older Chromium builds throw a <code>TypeError</code>, which
+    browser-boundary reports as a real compatibility failure — not an infrastructure error.
+  </p>
+  <div class="status fail" data-demo-status="fail" hidden></div>
+  <div class="status pass" data-demo-status="pass" hidden></div>
+  <p>Runtime identity (presentation evidence only; scans verify identity independently):</p>
+  <p class="ua"><code data-runtime-identity>unknown</code></p>
+  <script>
+    (function () {
+      var ua = document.querySelector('[data-runtime-identity]');
+      if (ua && navigator.userAgent) ua.textContent = navigator.userAgent;
+
+      var pass = document.querySelector('[data-demo-status="pass"]');
+      var fail = document.querySelector('[data-demo-status="fail"]');
+
+      function showPass() {
+        if (fail) fail.hidden = true;
+        if (pass) pass.hidden = false;
+        if (pass) pass.textContent = 'PASS — this browser supports the page.';
+      }
+
+      try {
+        // Deterministic boundary: Array.fromAsync requires Chromium >= 121.
+        if (typeof Array.fromAsync !== 'function') {
+          throw new TypeError('Array.fromAsync is not a function — this browser is below the Chromium 121 boundary');
+        }
+        Array.fromAsync([2, 1]).then(function (arr) {
+          if (!arr || arr.length !== 2) throw new TypeError('Array.fromAsync returned an unexpected result');
+          showPass();
+        });
+      } catch (err) {
+        // Older Chromium: real application-level compatibility failure.
+        if (fail) fail.hidden = false;
+        if (fail) fail.textContent = 'FAIL — ' + (err && err.message ? err.message : err);
+        throw err;
+      }
+    })();
+  </script>
+</body>
+</html>

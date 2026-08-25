@@ -30,7 +30,7 @@ export class PlaywrightController implements AutomationController {
     try {
       const context = await browser.newContext({ viewport: _config.viewport });
       const page = await context.newPage();
-      return new PlaywrightSession(browser, context, page);
+      return new PlaywrightSession(browser, context, page, engine);
     } catch (err) {
       await browser.close().catch(() => {});
       const message = err instanceof Error ? err.message : String(err);
@@ -56,7 +56,15 @@ class PlaywrightSession implements ControllerSession {
     private readonly browser: Browser,
     private readonly context: BrowserContext,
     private readonly page: Page,
+    private readonly engine: EngineName,
   ) {}
+
+  async getIdentity() {
+    // The engine is known from the resolved binary; the live build reports its
+    // own version (a Playwright revision number for WebKit — never a Safari major).
+    const version = await this.browser.version();
+    return { engine: this.engine as string | null, version, method: 'playwright:browser.version()' };
+  }
 
   async startTrace(): Promise<void> {
     await this.context.tracing.start({ screenshots: true, snapshots: true });

@@ -52,7 +52,21 @@ export type {
   FeatureFinding,
   VersionType,
 } from './reporting/types.js';
-export { writeJson, writeMarkdown, renderMarkdown } from './reporting/index.js';
+export { writeJson, writeMarkdown, renderMarkdown, renderComparisonJson, writeComparisonJson, renderComparisonMarkdown, writeComparisonMarkdown } from './reporting/index.js';
+export type {
+  ComparisonState,
+  NormalizedReadiness,
+  NormalizedRoute,
+  NormalizedScanScope,
+  BaselineIdentityEvidence,
+  BaselineEngineEntry,
+  BoundaryBaseline,
+} from './baseline/types.js';
+export { validateBaseline, BASELINE_SCHEMA_VERSION } from './baseline/schema.js';
+export { normalizeScanScope, scopeFingerprint } from './baseline/normalize.js';
+export { createBaseline, BaselineCreationError, type BaselineMetadata } from './baseline/create.js';
+export { readBaseline, writeBaseline } from './baseline/io.js';
+export { compareScanToBaseline, type EngineComparison, type ScanComparison, type ComparisonWarning, type ComparisonEvidenceRef } from './baseline/compare.js';
 
 // Analysis (for advanced consumers)
 export { FEATURE_TABLE, formatVersion, meetsThreshold } from './analysis/index.js';

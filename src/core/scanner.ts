@@ -1,3 +1,4 @@
+import os from 'node:os';
 import type {
   CheckResult,
   Confidence,
@@ -17,11 +18,14 @@ import {
 } from '../config/resolve.js';
 import { defaultBrowserProvider, type BrowserProvider } from '../browsers/provider.js';
 import { HistoricalUnavailableError } from '../browsers/types.js';
+import { buildIdentityEvidence } from '../browsers/identity.js';
 import type { FetchProgressHandler } from '../browsers/progress.js';
 import { checkEngineDeps } from './dependencies.js';
 import { runCheckWithRetry } from './compatibility-checker.js';
 import { searchBoundary, versionRange } from './version-search.js';
 import { aggregateFeatureFindings } from '../analysis/error-analyzer.js';
+import { VERSION } from '../cli/version.js';
+import { normalizeScanScope, scopeFingerprint } from '../baseline/normalize.js';
 
 /**
  * BrowserCompatibilityScanner — the public orchestrator.
@@ -92,10 +96,25 @@ export class BrowserCompatibilityScanner {
         timeoutMs: cfg.timeout,
         headed: cfg.headed,
         latestOnly: cfg.strategy === 'latest',
+        quick: cfg.quick,
         strategy: cfg.strategy,
         stepSize: cfg.stepSize,
         versionFloor: cfg.floor,
       },
+      provenance: {
+        packageVersion: VERSION,
+        os: os.platform(),
+        arch: os.arch(),
+        controllerPolicy: cfg.chromiumController,
+        routes: cfg.pages.map((p) => ({
+          url: p.url,
+          label: p.label ?? p.url,
+          readiness: readinessKindOf(p.readiness),
+        })),
+        checks: cfg.checks,
+      },
+      scope: normalizeScanScope(cfg),
+      configFingerprint: scopeFingerprint(normalizeScanScope(cfg)),
       results,
       summaries,
       featureFindings,
@@ -298,6 +317,13 @@ export async function scan(input: ScanConfig, progress?: ScanProgress): Promise<
   return BrowserCompatibilityScanner.scan(input, progress);
 }
 
+/** Readiness policy class for provenance (function readiness is non-portable). */
+function readinessKindOf(readiness: unknown): 'selectors' | 'none' | 'non-portable-function' {
+  if (!readiness) return 'none';
+  if (typeof readiness === 'function') return 'non-portable-function';
+  return 'selectors';
+}
+
 function resultLineFor(oldest: string | null, firstFail: string | null): string {
   if (oldest && firstFail) return `verified PASS >= ${oldest}; verified FAIL at ${firstFail}`;
   if (oldest) return `verified PASS >= ${oldest} (no failure found in searched range)`;
@@ -326,6 +352,16 @@ function synthesizeInconclusive(
     url: page.url,
     verdict: 'inconclusive',
     reason,
+    // No browser launched, so no identity could be observed — that is exactly
+    // why this result stays inconclusive.
+    identity: buildIdentityEvidence({
+      requestedVersion: version,
+      requestedEngine: engine,
+      versionType,
+      executable: null,
+      runtime: null,
+    }),
+    controller: 'playwright',
     signals: {
       navigationError: null,
       jsErrors: [],
