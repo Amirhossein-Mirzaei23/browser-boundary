@@ -15,6 +15,7 @@ function sessionStub(): ControllerSession & {
     releaseManualClose: () => releaseManualClose(),
     supportsTracing: false,
     disableCache: async () => {},
+    getIdentity: async () => ({ engine: 'chromium', version: '114.0', method: 'test-stub' }),
     attachCollectors: async () => {},
     goto: async () => ({ error: null, isTransient: false, inflight: [], responseCount: 1 }),
     checkReadiness: async () => ({ rendered: true, renderedSelectors: [], readyMs: 0, error: null }),

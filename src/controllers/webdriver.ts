@@ -141,6 +141,27 @@ class WebDriverSession implements ControllerSession {
     /* no-op */
   }
 
+  async getIdentity() {
+    // W3C capabilities (browserName/browserVersion; legacy sessions expose
+    // `version`). Field parsing stays inside the WebDriver controller.
+    const capabilities = await (this.driver as unknown as {
+      getCapabilities?: () => Promise<{ get(key: string): unknown } | Record<string, unknown>>;
+    }).getCapabilities?.();
+    const get = (key: string): unknown => {
+      if (!capabilities) return undefined;
+      if (typeof (capabilities as { get?: (k: string) => unknown }).get === 'function') {
+        return (capabilities as { get: (k: string) => unknown }).get(key);
+      }
+      return (capabilities as Record<string, unknown>)[key];
+    };
+    return {
+      engine: (get('browserName') as string | undefined) ?? null,
+      version:
+        (get('browserVersion') as string | undefined) ?? (get('version') as string | undefined) ?? null,
+      method: 'webdriver:session-capabilities',
+    };
+  }
+
   async disableCache(): Promise<void> {
     // Firefox doesn't expose per-request header rewriting like Playwright, but
     // we can disable the HTTP cache via a profile pref applied at launch. As a

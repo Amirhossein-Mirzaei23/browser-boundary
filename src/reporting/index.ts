@@ -13,3 +13,6 @@ export type {
 } from './types.js';
 export { writeJson } from './json.js';
 export { writeMarkdown, renderMarkdown } from './markdown.js';
+export { renderComparisonJson, writeComparisonJson } from './comparison-json.js';
+export { renderComparisonMarkdown, writeComparisonMarkdown } from './comparison-markdown.js';
+export { renderGithubSummary, appendGithubStepSummary } from './github-summary.js';

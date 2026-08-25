@@ -94,6 +94,24 @@ export interface CheckArtifacts {
   tracePath: string | null;
 }
 
+/**
+ * Verified identity evidence for one check: what was requested, what the
+ * on-disk executable reports, and what the live session reports. A check is
+ * only trustworthy when these agree (within the correct version domain).
+ */
+export interface BrowserIdentityEvidence {
+  requestedVersion: string;
+  requestedEngine: EngineName;
+  executableVersion: string | null;
+  executableEngine: string | null;
+  runtimeVersion: string | null;
+  runtimeEngine: string | null;
+  executableMethod: string;
+  runtimeMethod: string;
+  verified: boolean;
+  mismatchReason: string | null;
+}
+
 /** The full result of one (engine, version, page) check. */
 export interface CheckResult {
   engine: EngineName;
@@ -104,6 +122,8 @@ export interface CheckResult {
   url: string;
   verdict: Verdict;
   reason: string;
+  identity: BrowserIdentityEvidence;
+  controller: 'playwright' | 'webdriver';
   signals: CheckSignals;
   artifacts: CheckArtifacts;
   /** Feature attribution, if any (may be present even on inconclusive results). */
@@ -141,9 +161,33 @@ export interface ScanConfigSnapshot {
   timeoutMs: number;
   headed: boolean;
   latestOnly: boolean;
+  /** True when this scan is a quick current-browser proof, not boundary discovery. */
+  quick: boolean;
   strategy: string;
   stepSize: number;
   versionFloor: Partial<Record<EngineName, number>>;
+}
+
+/** Where and how a scan ran — retained for baseline provenance. */
+export interface ScanProvenance {
+  packageVersion: string;
+  os: string;
+  arch: string;
+  controllerPolicy: 'auto' | 'playwright' | 'webdriver';
+  /** Normalized route labels and readiness policy per route. */
+  routes: Array<{
+    url: string;
+    label: string;
+    readiness: 'selectors' | 'none' | 'non-portable-function';
+  }>;
+  checks: {
+    navigation: boolean;
+    javascript: boolean;
+    console: boolean;
+    network: boolean;
+    rendering: boolean;
+    readiness: boolean;
+  };
 }
 
 /** The complete output of one scan. */
@@ -154,6 +198,12 @@ export interface ScanResult {
   startedAt: string;
   finishedAt: string;
   config: ScanConfigSnapshot;
+  /** Scan provenance (package, platform, routes, checks) for baseline comparison. */
+  provenance: ScanProvenance;
+  /** Canonical normalized comparison scope (see src/baseline/normalize.ts). */
+  scope: import('../baseline/types.js').NormalizedScanScope;
+  /** sha256 digest of the canonical scope. */
+  configFingerprint: string;
   results: CheckResult[];
   summaries: EngineSummary[];
   featureFindings: FeatureFinding[];
