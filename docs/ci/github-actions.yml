@@ -1,0 +1,83 @@
+# Official browser-boundary consumer workflow (copy into .github/workflows/).
+#
+# Cadence: a scheduled historical boundary scan compared against a committed,
+# reviewed baseline. The gate fails ONLY for verified regressions —
+# inconclusive/infrastructure failures never fail the gate.
+#
+# Assumptions you must adapt:
+#  - SCAN_URL points at a stable staging environment (not production).
+#  - Any auth the site needs is injected via secrets (e.g. cookies via config).
+#  - A reviewed baseline file exists at browser-boundary.baseline.json
+#    (see docs/CI_BASELINE_WORKFLOW.md for the acceptance flow).
+
+name: browser-boundary
+
+on:
+  schedule:
+    - cron: '0 4 * * 1' # weekly historical scan (Monday 04:00 UTC)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  SCAN_URL: ${{ secrets.BROWSER_BOUNDARY_URL || 'https://staging.example.com/' }}
+
+jobs:
+  boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install browser-boundary
+        run: |
+          npm install --no-save browser-boundary playwright
+          npx playwright install chromium --with-deps
+
+      - name: Resolve cache key inputs
+        id: keys
+        run: |
+          echo "os=${{ runner.os }}" >> "$GITHUB_OUTPUT"
+          echo "arch=${{ runner.arch }}" >> "$GITHUB_OUTPUT"
+          echo "lock=$(hashFiles('package-lock.json'))" >> "$GITHUB_OUTPUT" || true
+          echo "pw=$(npx playwright --version | tr -d ' ')" >> "$GITHUB_OUTPUT"
+          echo "pkg=$(node -p "require('./node_modules/browser-boundary/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Browser binaries are large: cache Playwright browsers and the
+      # browser-boundary historical cache keyed on OS, arch, package version,
+      # Playwright version, and the lockfile.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ steps.keys.outputs.os }}-${{ steps.keys.outputs.arch }}-${{ steps.keys.outputs.pw }}-${{ steps.keys.outputs.lock }}
+          restore-keys: playwright-${{ steps.keys.outputs.os }}-${{ steps.keys.outputs.arch }}-${{ steps.keys.outputs.pw }}-
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/browser-boundary
+          key: browser-boundary-${{ steps.keys.outputs.os }}-${{ steps.keys.outputs.arch }}-${{ steps.keys.outputs.pkg }}-${{ steps.keys.outputs.pw }}
+
+      - name: Historical boundary scan (exact majors)
+        run: npx browser-boundary "$SCAN_URL" --engines chromium --versions 121,120 --headless --format json,markdown -o reports
+
+      - name: Compare against the accepted baseline (conservative gate)
+        env:
+          GITHUB_STEP_SUMMARY: ${{ GITHUB_STEP_SUMMARY }}
+        run: >
+          npx browser-boundary compare
+          --baseline ./browser-boundary.baseline.json
+          --current ./reports/compatibility.json
+          --gate -o reports
+        continue-on-error: false
+
+      - name: Upload scan and comparison reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-boundary-reports
+          path: reports/
+          if-no-files-found: warn

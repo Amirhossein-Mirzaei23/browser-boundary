@@ -44,6 +44,8 @@ export interface ResolvedConfig {
   waitUntil: 'domcontentloaded' | 'load';
   disableHttpCache: boolean;
   holdOpenSec: number;
+  /** True for quick current-browser proofs (Fast Start), set from ScanConfig.quick. */
+  quick: boolean;
   formats: ('json' | 'markdown')[];
   outputDir: string;
   cacheDir: string;
@@ -126,6 +128,7 @@ export function resolveConfig(input: ScanConfig): ResolvedConfig {
     waitUntil: input.waitUntil ?? DEFAULTS.waitUntil,
     disableHttpCache: input.disableHttpCache ?? DEFAULTS.disableHttpCache,
     holdOpenSec: input.holdOpenSec ?? DEFAULTS.holdOpenSec,
+    quick: input.quick ?? false,
     formats,
     outputDir,
     cacheDir,

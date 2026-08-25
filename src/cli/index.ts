@@ -5,6 +5,10 @@ import { writeJson, writeMarkdown, type ScanResult } from '../reporting/index.js
 import { ConfigError } from '../config/resolve.js';
 import type { ScanConfig } from '../config/schema.js';
 import { FetchProgressRenderer } from './progress.js';
+import { QUICK_LABEL, quickNextActions } from './quick.js';
+import { runBaselineCreate } from './baseline.js';
+import { runCompare } from './compare.js';
+import { EXIT } from './exit-codes.js';
 
 /**
  * CLI entrypoint. Thin layer over the public scan() API. Exit codes:
@@ -15,13 +19,6 @@ import { FetchProgressRenderer } from './progress.js';
  *
  * This file is what `bin/browser-boundary` resolves to after build.
  */
-
-const EXIT = {
-  OK: 0,
-  COMPAT_FAIL: 1,
-  CONFIG_ERROR: 2,
-  INFRA_ERROR: 3,
-} as const;
 
 async function main(): Promise<number> {
   let parsed: ParsedCli;
@@ -46,7 +43,20 @@ async function main(): Promise<number> {
     return runInstall();
   }
 
-  // scan
+  if (parsed.command === 'baseline-create') {
+    return runBaselineCreate(parsed);
+  }
+
+  if (parsed.command === 'compare') {
+    return runCompare(parsed);
+  }
+
+  // scan / quick only (help, version, install, baseline-create returned above)
+  if (parsed.command !== 'scan' && parsed.command !== 'quick') {
+    return EXIT.CONFIG_ERROR;
+  }
+
+  // scan (or quick — a scan translated by the options layer)
   if (!parsed.config.urls?.length) {
     console.error('Configuration error: a URL is required. Run `browser-boundary --help`.');
     return EXIT.CONFIG_ERROR;
@@ -54,12 +64,19 @@ async function main(): Promise<number> {
 
   // resolveConfig will validate and apply defaults; wrap in try/catch below.
   const scanConfig = parsed.config as ScanConfig;
+  const quick = parsed.command === 'quick';
 
   console.log('browser-boundary');
   console.log('------------------');
-  console.log(`URLs:    ${parsed.config.urls.join(', ')}`);
-  console.log(`Engines: ${(parsed.config.engines ?? ['chromium', 'firefox', 'webkit']).join(', ')}`);
-  console.log(`Strategy: ${parsed.config.search?.strategy ?? 'binary'}`);
+  if (quick) {
+    console.log(QUICK_LABEL);
+    console.log(`URL:     ${parsed.config.urls[0]}`);
+    console.log('Engine:  chromium (current build), headless');
+  } else {
+    console.log(`URLs:    ${parsed.config.urls.join(', ')}`);
+    console.log(`Engines: ${(parsed.config.engines ?? ['chromium', 'firefox', 'webkit']).join(', ')}`);
+    console.log(`Strategy: ${parsed.config.search?.strategy ?? 'binary'}`);
+  }
 
   let result: ScanResult;
   try {
@@ -84,6 +101,12 @@ async function main(): Promise<number> {
   if (formats.includes('markdown')) console.log(`  ${writeMarkdown(result, dir)}`);
 
   printSummary(result);
+
+  if (quick) {
+    console.log('\nNext actions');
+    console.log('------------');
+    for (const action of quickNextActions(parsed.config.urls![0] as string)) console.log(`  ${action}`);
+  }
 
   // Exit code: 1 if any engine has a verified FAIL (real compat boundary
   // failure); 0 otherwise (passes or inconclusive are not compat failures).
