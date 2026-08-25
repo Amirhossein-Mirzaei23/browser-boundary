@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateDemoBoundary, type DemoCheckEvidence, type DemoReportEvidence } from '../../scripts/verify-readme-demo.js';
+import { validateDemoBoundary, waitForDemoHealth, type DemoCheckEvidence, type DemoReportEvidence } from '../../scripts/verify-readme-demo.js';
+import { startDemoServer } from '../../examples/readme-demo/server.js';
 
 function check(version: string, verdict: string, overrides: Record<string, unknown> = {}): DemoCheckEvidence {
   return {
@@ -93,4 +94,28 @@ test('playwright-revision (WebKit) evidence is never accepted for the chromium d
   const webkitCheck = { ...check('120', 'fail'), engine: 'webkit', versionType: 'playwright-revision' };
   const v = validateDemoBoundary(report([webkitCheck, check('121', 'pass')]), EXPECTED);
   assert.equal(v.accepted, false);
+});
+
+test('demo server exposes a /healthz endpoint the verifier can wait on', async () => {
+  const server = await startDemoServer(0);
+  try {
+    const base = `http://127.0.0.1:${server.port}/`;
+    const res = await fetch(new URL('healthz', base));
+    assert.equal(res.status, 200);
+    await waitForDemoHealth(base, 2_000); // resolves once healthy
+  } finally {
+    await server.close();
+  }
+});
+
+test('waitForDemoHealth rejects when no healthy server is listening', async () => {
+  // Bind then close to get a definitely-free port.
+  const probe = await startDemoServer(0);
+  const deadBase = `http://127.0.0.1:${probe.port}/`;
+  await probe.close();
+
+  await assert.rejects(
+    () => waitForDemoHealth(deadBase, 300),
+    (err: unknown) => err instanceof Error && /health check failed/.test(err.message),
+  );
 });

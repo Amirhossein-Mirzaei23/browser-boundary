@@ -167,6 +167,99 @@ test('--chromium-controller rejects unknown policies', () => {
   );
 });
 
+test('quick parses to Chromium-only, latest strategy, headless, one URL (cli-options contract)', () => {
+  const parsed = parseCli(['quick', URL]);
+  assert.equal(parsed.command, 'quick');
+  assert.equal(parsed.url, URL);
+  assert.deepEqual(parsed.config.urls, [URL]);
+  assert.deepEqual(parsed.config.engines, ['chromium']);
+  assert.equal(parsed.config.search?.strategy, 'latest');
+  assert.equal(parsed.config.headed, false);
+  assert.equal(parsed.config.quick, true);
+});
+
+test('--pages joins relative paths onto the positional base URL', () => {
+  const parsed = parseCli([URL, '--pages', '/,/about']);
+  assert.deepEqual(parsed.config.urls, [URL, `${URL}/`, `${URL}/about`]);
+});
+
+test('--pages requires a base URL', () => {
+  assert.throws(
+    () => parseCli(['--pages', '/about'], {}),
+    (err: unknown) => err instanceof ConfigError && /--pages requires/.test(err.message),
+  );
+});
+
+test('--pages uses the first config URL as its base and appends to configured URLs', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'browser-boundary-config-pages-'));
+  const configPath = path.join(dir, 'scan.json');
+  writeFileSync(configPath, JSON.stringify({ urls: [URL] }));
+
+  const parsed = parseCli(['--config', configPath, '--pages', '/about'], {});
+  assert.deepEqual(parsed.config.urls, [URL, `${URL}/about`]);
+});
+
+for (const [name, args] of [
+  ['unknown --wait-until', [URL, '--wait-until', 'nope']],
+  ['unknown --format', [URL, '--format', 'xml']],
+  ['empty --format', [URL, '--format=']],
+  ['unknown --readiness-mode', [URL, '--readiness-selector', 'body', '--readiness-mode', 'nope']],
+  ['--readiness-mode without a selector', [URL, '--readiness-mode', 'all']],
+  ['unknown --min-confidence', [URL, '--min-confidence', 'nope']],
+  ['empty --pages', [URL, '--pages=']],
+  ['extra positional', [URL, 'garbage']],
+  ['second URL', [URL, 'https://example.org']],
+  ['quick with a second URL', ['quick', URL, 'https://example.org']],
+  ['install with an argument', ['install', 'garbage']],
+  ['both version aliases', [URL, '--engines', 'chromium', '--versions', '120', '--exact-version', '119']],
+] as const) {
+  test(`rejects ${name}`, () => {
+    assert.throws(() => parseCli([...args], {}), ConfigError);
+  });
+}
+
+test('legacy BC_ aliases match their MRZ_ equivalents', () => {
+  const parsed = parseCli([URL], {
+    BC_STRATEGY: 'latest',
+    BC_FORMAT: 'json',
+    BC_MIN_CONFIDENCE: 'high',
+    BC_WAIT_UNTIL: 'load',
+    BC_HTTP_CACHE: '1',
+    BC_HOLD_OPEN: '3',
+  });
+  assert.equal(parsed.config.search?.strategy, 'latest');
+  assert.deepEqual(parsed.config.output?.format, ['json']);
+  assert.equal(parsed.config.analysis?.minConfidence, 'high');
+  assert.equal(parsed.config.waitUntil, 'load');
+  assert.equal(parsed.config.disableHttpCache, false);
+  assert.equal(parsed.config.holdOpenSec, 3);
+});
+
+test('--config reports unreadable or invalid JSON as a configuration error', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'browser-boundary-config-'));
+  const bad = path.join(dir, 'bad.json');
+  writeFileSync(bad, '{not json');
+  assert.throws(
+    () => parseCli(['--config', bad], {}),
+    (err: unknown) => err instanceof ConfigError && /Could not load config file/.test(err.message),
+  );
+});
+
+test('flags take precedence over MRZ_ env variables', () => {
+  const parsed = parseCli(
+    [URL, '--engines', 'chromium', '--timeout', '15000'],
+    { MRZ_ENGINES: 'firefox', MRZ_TIMEOUT_MS: '9999' },
+  );
+  assert.deepEqual(parsed.config.engines, ['chromium']);
+  assert.equal(parsed.config.timeout, 15000);
+});
+
+test('MRZ_ env variables fill in when flags are absent', () => {
+  const parsed = parseCli([URL], { MRZ_ENGINES: 'firefox', MRZ_TIMEOUT_MS: '7777' });
+  assert.deepEqual(parsed.config.engines, ['firefox']);
+  assert.equal(parsed.config.timeout, 7777);
+});
+
 for (const [name, args] of [
   ['--timeout 0', [URL, '--timeout', '0']],
   ["--engines ''", [URL, '--engines', '']],

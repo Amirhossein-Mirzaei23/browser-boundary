@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { driverServerArgs, firefoxDriverEnv, isLegacyChromeDriverVersion, legacyFontconfigXml, legacySessionPayload, normalizeWebDriverLogLevel } from '../../src/controllers/webdriver.js';
+import { driverServerArgs, firefoxDriverEnv, identityFromCapabilities, isLegacyChromeDriverVersion, legacyFontconfigXml, legacySessionPayload, normalizeWebDriverLogLevel, WebDriverSession } from '../../src/controllers/webdriver.js';
 
 test('WebDriver ESM subpath imports include the runtime .js extension', () => {
   const source = readFileSync(new URL('../../src/controllers/webdriver.ts', import.meta.url), 'utf8');
@@ -67,4 +67,67 @@ test('legacy Fontconfig avoids modern include files and points at installed font
   const xml = legacyFontconfigXml(['/usr/share/fonts/truetype/dejavu', '/usr/share/fonts/truetype/liberation2']);
   assert.match(xml, /<dir>\/usr\/share\/fonts\/truetype\/dejavu<\/dir>/);
   assert.doesNotMatch(xml, /fonts\.conf|conf\.d|description/);
+});
+
+test('WebDriverSession.getIdentity reads live W3C session capabilities', async () => {
+  const caps = new Map<string, unknown>([
+    ['browserName', 'firefox'],
+    ['browserVersion', '115.0.3'],
+  ]);
+  let capabilityReads = 0;
+  const driver = {
+    async getCapabilities() {
+      capabilityReads += 1;
+      return { get: (key: string) => caps.get(key) };
+    },
+  };
+  const session = new WebDriverSession(
+    driver as never,
+    {} as never,
+    4444,
+    'firefox',
+  );
+
+  const identity = await session.getIdentity();
+
+  assert.equal(capabilityReads, 1);
+  assert.equal(identity.engine, 'firefox');
+  assert.equal(identity.version, '115.0.3');
+  assert.equal(identity.method, 'webdriver:session-capabilities');
+});
+
+test('getIdentity accepts plain capability records and falls back to legacy version', () => {
+  // Legacy (JSON Wire) sessions report `version` instead of `browserVersion`.
+  const identity = identityFromCapabilities({ browserName: 'chrome', version: '74.0.3729.6' });
+
+  assert.equal(identity.engine, 'chrome');
+  assert.equal(identity.version, '74.0.3729.6');
+});
+
+test('getIdentity prefers W3C browserVersion over the legacy version field', () => {
+  const identity = identityFromCapabilities({
+    browserName: 'chrome',
+    browserVersion: '121.0.6167.85',
+    version: 'legacy-value-ignored',
+  });
+
+  assert.equal(identity.version, '121.0.6167.85');
+});
+
+test('getIdentity reports null engine/version when capabilities are missing or empty', () => {
+  assert.deepEqual(identityFromCapabilities(null), {
+    engine: null,
+    version: null,
+    method: 'webdriver:session-capabilities',
+  });
+  assert.deepEqual(identityFromCapabilities(undefined), {
+    engine: null,
+    version: null,
+    method: 'webdriver:session-capabilities',
+  });
+  assert.deepEqual(identityFromCapabilities({}), {
+    engine: null,
+    version: null,
+    method: 'webdriver:session-capabilities',
+  });
 });

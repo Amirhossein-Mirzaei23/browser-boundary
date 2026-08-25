@@ -115,6 +115,26 @@ export function validateDemoBoundary(
   };
 }
 
+/**
+ * Poll the demo server's /healthz endpoint until it responds 200 (or fail after
+ * timeoutMs). The verifier never starts its CLI run against an unready target.
+ */
+export async function waitForDemoHealth(baseUrl: string, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = 'unknown error';
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(new URL('healthz', baseUrl));
+      if (res.ok) return;
+      lastError = `health endpoint returned HTTP ${res.status}`;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`demo server health check failed within ${timeoutMs}ms: ${lastError}`);
+}
+
 /** Execute the full demo verification workflow. Returns a process exit code. */
 export async function verifyReadmeDemo(options: { keepOutput?: boolean } = {}): Promise<number> {
   const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -125,6 +145,7 @@ export async function verifyReadmeDemo(options: { keepOutput?: boolean } = {}): 
     server = await startDemoServer(0);
     const url = `http://127.0.0.1:${server.port}/`;
     console.log(`[demo] target served at ${url}`);
+    await waitForDemoHealth(url);
 
     const versions = `${EXPECTED_BOUNDARY.failMajor},${EXPECTED_BOUNDARY.passMajor}`;
     const cli = path.join(root, 'src', 'cli', 'index.ts');

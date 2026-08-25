@@ -88,6 +88,19 @@ test('unknown strategy throws', () => {
   assert.throws(() => resolveConfig({ urls: ['https://x.com'], search: { strategy: 'bogus' } }), ConfigError);
 });
 
+for (const [name, config] of [
+  ['waitUntil', { waitUntil: 'nope' }],
+  ['output format', { output: { format: ['xml'] } }],
+  ['empty output format', { output: { format: [] } }],
+  ['readiness mode', { readiness: { selectors: ['body'], mode: 'nope' } }],
+  ['empty readiness selectors', { readiness: { selectors: [] } }],
+  ['minimum confidence', { analysis: { minConfidence: 'nope' } }],
+] as const) {
+  test(`resolveConfig rejects invalid ${name}`, () => {
+    assert.throws(() => resolveConfig({ urls: ['https://x.com'], ...config } as never), ConfigError);
+  });
+}
+
 test('waitUntil defaults to domcontentloaded', () => {
   const cfg = resolveConfig({ urls: ['https://x.com'] });
   assert.equal(cfg.waitUntil, 'domcontentloaded');

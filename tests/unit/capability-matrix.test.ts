@@ -38,7 +38,19 @@ test('WebKit is labeled as a Playwright revision and never as a Safari major', (
 
 test('README links to the full matrix before historical-download instructions', () => {
   const linkIdx = README.indexOf('CAPABILITY_MATRIX.md');
-  const downloadIdx = README.indexOf('historical', linkIdx);
   assert.ok(linkIdx >= 0, 'README links the matrix');
-  assert.ok(downloadIdx > linkIdx || README.slice(linkIdx).includes('download'), 'matrix appears before/in coverage context');
+  // The historical-download instructions live in the Quick start install
+  // section; the capability matrix (what you can test before paying any
+  // download cost) must be linked before them.
+  const installIdx = README.indexOf('### 1. Install');
+  assert.ok(installIdx > 0, 'README has an install section');
+  assert.ok(
+    linkIdx < installIdx,
+    'capability matrix link must precede the historical-download instructions',
+  );
+  // The note may emphasize "before" with Markdown formatting; compare its
+  // rendered text rather than coupling the test to that formatting.
+  const renderedReadme = README.replace(/[*_]/g, '');
+  const noteIdx = renderedReadme.indexOf('before paying any historical download cost');
+  assert.ok(noteIdx > 0, 'README explains why readers should consult the matrix first');
 });

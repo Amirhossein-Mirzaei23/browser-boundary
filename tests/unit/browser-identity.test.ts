@@ -117,7 +117,7 @@ test('runCheck enforces the identity honesty rule and reports identity evidence'
 
   // CheckResult carries identity + controller for both passing and failing checks.
   assert.ok(types.includes('identity: BrowserIdentityEvidence'));
-  assert.ok(types.includes("controller: 'playwright' | 'webdriver'"));
+  assert.ok(types.includes("controller: 'playwright' | 'webdriver' | null"));
 
   // Identity is collected after launch and before navigation.
   const launchIdx = checker.indexOf('controller.launch');

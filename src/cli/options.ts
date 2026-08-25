@@ -54,47 +54,83 @@ export function parseCli(
     return { command: 'help', url: null, config: {} };
   }
   if (positionals[0] === 'install') {
+    if (positionals.length !== 1) throw new ConfigError('install does not accept positional arguments.');
     return { command: 'install', url: null, config: {} };
   }
   if (positionals[0] === 'quick') {
     return parseQuickCli(positionals.slice(1), values, env);
   }
 
-  const url = positionals.find((p) => /^https?:\/\//i.test(p)) ?? null;
-
-  // Build URLs from positional url + --pages + --base-url.
-  const urls: string[] = [];
-  if (url) urls.push(url);
-  if (values.pages) {
-    const base = values['base-url'] ?? url;
-    if (!base) throw new ConfigError('--pages requires either a positional URL or --base-url.');
-    for (const p of values.pages.split(',').map((s) => s.trim()).filter(Boolean)) {
-      urls.push(p.startsWith('http') ? p : `${base.replace(/\/$/, '')}${p.startsWith('/') ? '' : '/'}${p}`);
-    }
+  if (positionals.length > 1) {
+    throw new ConfigError('Only one positional URL is accepted; use --pages for additional pages.');
+  }
+  const url = positionals[0] ?? null;
+  if (url && !/^https?:\/\//i.test(url)) {
+    throw new ConfigError(`Invalid positional URL (must start with http(s)://): ${url}`);
   }
   const fileConfig = values.config ? readConfigFile(values.config) : {};
+
+  // Build URLs from positional url + --pages + --base-url.
+  const configuredUrls = fileConfig.urls ?? [];
+  const urls: ScanConfig['urls'] = url ? [url] : values.pages !== undefined ? [...configuredUrls] : [];
+  if (values.pages !== undefined) {
+    const pageItems = parseNonEmptyList(values.pages, '--pages');
+    const configuredBase = configuredUrls[0];
+    const configuredBaseUrl = typeof configuredBase === 'string' ? configuredBase : configuredBase?.url;
+    const base = values['base-url'] ?? url ?? configuredBaseUrl;
+    if (!base) throw new ConfigError('--pages requires either a positional URL or --base-url.');
+    for (const p of pageItems) {
+      urls.push(/^https?:\/\//i.test(p) ? p : `${base.replace(/\/$/, '')}${p.startsWith('/') ? '' : '/'}${p}`);
+    }
+  }
 
   const envEngines = env.MRZ_ENGINES ?? env.BC_ENGINES;
   const enginesValue = values.engines ?? envEngines;
   const engines = parseEngines(enginesValue);
 
   validateEngines(engines);
-  const strategy = (values.strategy ?? env.MRZ_STRATEGY) as SearchStrategy | undefined;
+  const strategy = parseEnum(
+    values.strategy ?? env.MRZ_STRATEGY ?? env.BC_STRATEGY,
+    '--strategy',
+    ['binary', 'step-down', 'latest', 'explicit'],
+  ) as SearchStrategy | undefined;
   const latestOnly = values['latest-only'] || envBool(env, 'MRZ_LATEST_ONLY') || envBool(env, 'BC_LATEST_ONLY');
   // Headed (visible windows) is the DEFAULT. --headless opts into running
   // invisibly. The MRZ_HEADLESS / BC_HEADLESS env vars do the same.
   const headless = values.headless || envBool(env, 'MRZ_HEADLESS') || envBool(env, 'BC_HEADLESS');
   const hasVersionsFlag = values.versions !== undefined || values['exact-version'] !== undefined;
+  if (values.versions !== undefined && values['exact-version'] !== undefined) {
+    throw new ConfigError('--versions and --exact-version are aliases; use only one.');
+  }
   const versionsValue = values.versions ?? values['exact-version'];
   const explicitVersions = hasVersionsFlag
     ? parseExplicitVersions(versionsValue!, values.engines, engines, strategy, latestOnly)
     : undefined;
 
-  const format = (values.format ?? env.MRZ_FORMAT)?.split(',').map((s) => s.trim()) as
-    | ('json' | 'markdown')[]
-    | undefined;
+  const formatValue = values.format ?? env.MRZ_FORMAT ?? env.BC_FORMAT;
+  const format = formatValue === undefined
+    ? undefined
+    : parseEnumList(formatValue, '--format', ['json', 'markdown']) as ('json' | 'markdown')[];
 
   const selectors = values['readiness-selector'];
+  if (selectors?.some((selector) => selector.trim().length === 0)) {
+    throw new ConfigError('--readiness-selector must not be empty.');
+  }
+  const readinessModeValue = values['readiness-mode'];
+  if (readinessModeValue !== undefined && !selectors?.length) {
+    throw new ConfigError('--readiness-mode requires at least one --readiness-selector.');
+  }
+  const readinessMode = parseEnum(readinessModeValue, '--readiness-mode', ['any', 'all']);
+  const waitUntil = parseEnum(
+    values['wait-until'] ?? env.MRZ_WAIT_UNTIL ?? env.BC_WAIT_UNTIL,
+    '--wait-until',
+    ['domcontentloaded', 'load'],
+  );
+  const minConfidence = parseEnum(
+    values['min-confidence'] ?? env.MRZ_MIN_CONFIDENCE ?? env.BC_MIN_CONFIDENCE,
+    '--min-confidence',
+    ['high', 'medium', 'low', 'unknown'],
+  );
   const chromiumController = parseChromiumController(
     values['chromium-controller'] ?? env.MRZ_CHROMIUM_CONTROLLER ?? env.BC_CHROMIUM_CONTROLLER,
   );
@@ -108,17 +144,14 @@ export function parseCli(
       explicitVersions,
     },
     timeout: positiveNumber(values.timeout ?? env.MRZ_TIMEOUT_MS ?? env.BC_TIMEOUT_MS, '--timeout'),
-    waitUntil: (values['wait-until'] ?? env.MRZ_WAIT_UNTIL) as
-      | 'domcontentloaded'
-      | 'load'
-      | undefined,
+    waitUntil: waitUntil as 'domcontentloaded' | 'load' | undefined,
     // HTTP cache is DISABLED by default (correctness). `--http-cache` opts back in.
     disableHttpCache: values['http-cache']
       ? false
-      : envBool(env, 'MRZ_HTTP_CACHE')
+      : envBool(env, 'MRZ_HTTP_CACHE') || envBool(env, 'BC_HTTP_CACHE')
         ? false
         : undefined,
-    holdOpenSec: positiveNumber(values['hold-open'] ?? env.MRZ_HOLD_OPEN, '--hold-open'),
+    holdOpenSec: positiveNumber(values['hold-open'] ?? env.MRZ_HOLD_OPEN ?? env.BC_HOLD_OPEN, '--hold-open'),
     // Headed is the default; --headless inverts it.
     headed: headless ? false : values.headed ? true : undefined,
     output: {
@@ -126,14 +159,9 @@ export function parseCli(
       directory: values.output ?? env.MRZ_REPORTS_DIR ?? env.BC_REPORTS_DIR,
     },
     analysis: {
-      minConfidence: (values['min-confidence'] ?? env.MRZ_MIN_CONFIDENCE) as
-        | 'high'
-        | 'medium'
-        | 'low'
-        | 'unknown'
-        | undefined,
+      minConfidence: minConfidence as 'high' | 'medium' | 'low' | 'unknown' | undefined,
     },
-    readiness: selectors?.length ? { selectors, mode: (values['readiness-mode'] as 'any' | 'all') ?? 'any' } : undefined,
+    readiness: selectors?.length ? { selectors, mode: (readinessMode as 'any' | 'all') ?? 'any' } : undefined,
   };
 
   const config = mergeConfig(fileConfig, clean(cliConfig) as Partial<ScanConfig>);
@@ -150,8 +178,10 @@ function parseQuickCli(
   values: ReturnType<typeof parseArgs>['values'],
   env: NodeJS.ProcessEnv,
 ): ParsedCli {
-  const url = positionals.find((p) => /^https?:\/\//i.test(p));
-  if (!url) throw new ConfigError('quick requires exactly one URL: browser-boundary quick <url>.');
+  if (positionals.length !== 1 || !/^https?:\/\//i.test(positionals[0])) {
+    throw new ConfigError('quick requires exactly one URL: browser-boundary quick <url>.');
+  }
+  const url = positionals[0];
   if (values.pages) throw new ConfigError('quick accepts exactly one URL and cannot be combined with --pages.');
   if (values.versions !== undefined || values['exact-version'] !== undefined) {
     throw new ConfigError('quick tests the current build only and cannot be combined with --versions.');
@@ -278,6 +308,29 @@ function positiveNumber(value: string | undefined, option: string): number | und
     throw new ConfigError(`${option} must be a finite number greater than 0; received "${value}".`);
   }
   return parsed;
+}
+
+function parseNonEmptyList(value: string, option: string): string[] {
+  const items = value.split(',').map((item) => item.trim());
+  if (items.length === 0 || items.some((item) => item.length === 0)) {
+    throw new ConfigError(`${option} must not be empty or contain empty values.`);
+  }
+  return items;
+}
+
+function parseEnum(value: string | undefined, option: string, valid: readonly string[]): string | undefined {
+  if (value === undefined) return undefined;
+  if (!valid.includes(value)) {
+    throw new ConfigError(`${option} must be one of: ${valid.join(', ')}; received "${value}".`);
+  }
+  return value;
+}
+
+function parseEnumList(value: string, option: string, valid: readonly string[]): string[] {
+  const items = parseNonEmptyList(value, option);
+  const invalid = items.find((item) => !valid.includes(item));
+  if (invalid) throw new ConfigError(`${option} values must be one of: ${valid.join(', ')}; received "${invalid}".`);
+  return [...new Set(items)];
 }
 
 function clean(obj: Record<string, unknown>): Record<string, unknown> {

@@ -66,6 +66,7 @@ export function resolveConfig(input: ScanConfig): ResolvedConfig {
   validateEngines(engines);
   validateChromiumController(input.chromiumController);
   validateExplicitConfig(input, engines);
+  validateRuntimeConfig(input);
 
   const pages: PageSpec[] = (input.urls ?? []).map((u, i) =>
     typeof u === 'string' ? { url: u, label: labelFor(u, i) } : { label: labelFor(u.url, i), ...u },
@@ -93,9 +94,7 @@ export function resolveConfig(input: ScanConfig): ResolvedConfig {
 
   const cacheDir = expandTilde(input.cache?.directory ?? DEFAULTS.cacheDir);
   const outputDir = path.resolve(input.output?.directory ?? DEFAULTS.outputDir);
-  const formats = input.output?.format && input.output.format.length
-    ? input.output.format
-    : [...DEFAULTS.format];
+  const formats = input.output?.format ?? [...DEFAULTS.format];
 
   return {
     pages,
@@ -154,6 +153,32 @@ function validateChromiumController(policy: ChromiumControllerPolicy | undefined
     throw new ConfigError(
       `Unknown Chromium controller "${policy}". Valid values: auto, playwright, webdriver.`,
     );
+  }
+}
+
+function validateRuntimeConfig(input: ScanConfig): void {
+  if (input.waitUntil !== undefined && !['domcontentloaded', 'load'].includes(input.waitUntil)) {
+    throw new ConfigError(`Unknown waitUntil value: ${input.waitUntil}. Valid values: domcontentloaded, load.`);
+  }
+  if (input.output?.format !== undefined) {
+    if (!Array.isArray(input.output.format) || input.output.format.length === 0) {
+      throw new ConfigError('At least one output format is required. Valid values: json, markdown.');
+    }
+    const invalid = input.output.format.find((format) => !['json', 'markdown'].includes(format));
+    if (invalid) throw new ConfigError(`Unknown output format: ${invalid}. Valid values: json, markdown.`);
+  }
+  if (input.readiness !== undefined) {
+    if (!Array.isArray(input.readiness.selectors) || input.readiness.selectors.length === 0 ||
+        input.readiness.selectors.some((selector) => typeof selector !== 'string' || selector.trim().length === 0)) {
+      throw new ConfigError('Readiness requires at least one non-empty selector.');
+    }
+    if (input.readiness.mode !== undefined && !['any', 'all'].includes(input.readiness.mode)) {
+      throw new ConfigError(`Unknown readiness mode: ${input.readiness.mode}. Valid values: any, all.`);
+    }
+  }
+  const minConfidence = input.analysis?.minConfidence;
+  if (minConfidence !== undefined && !['high', 'medium', 'low', 'unknown'].includes(minConfidence)) {
+    throw new ConfigError(`Unknown minimum confidence: ${minConfidence}. Valid values: high, medium, low, unknown.`);
   }
 }
 

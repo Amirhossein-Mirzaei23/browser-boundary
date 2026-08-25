@@ -337,7 +337,9 @@ function synthesizeInconclusive(
       executable: null,
       runtime: null,
     }),
-    controller: 'playwright',
+    // No controller drove this check: no session was ever created. Recording
+    // one would fabricate evidence.
+    controller: null,
     signals: {
       navigationError: null,
       jsErrors: [],

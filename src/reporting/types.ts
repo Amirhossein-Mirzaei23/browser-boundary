@@ -123,7 +123,12 @@ export interface CheckResult {
   verdict: Verdict;
   reason: string;
   identity: BrowserIdentityEvidence;
-  controller: 'playwright' | 'webdriver';
+  /**
+   * Controller that actually drove this check. Null when no controller was
+   * launched (e.g. a synthesized inconclusive result for an unavailable
+   * historical binary) — never fabricated.
+   */
+  controller: 'playwright' | 'webdriver' | null;
   signals: CheckSignals;
   artifacts: CheckArtifacts;
   /** Feature attribution, if any (may be present even on inconclusive results). */

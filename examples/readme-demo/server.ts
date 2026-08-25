@@ -23,6 +23,11 @@ export async function startDemoServer(port = 4317, host = '127.0.0.1'): Promise<
 
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', `http://${host}`);
+    if (url.pathname === '/healthz') {
+      res.writeHead(200, { 'content-type': 'text/plain', 'cache-control': 'no-store' });
+      res.end('ok');
+      return;
+    }
     if (url.pathname !== '/') {
       res.writeHead(404, { 'content-type': 'text/plain' });
       res.end('not found');
