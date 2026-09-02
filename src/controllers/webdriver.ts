@@ -118,7 +118,7 @@ export class WebDriverController implements AutomationController {
   }
 }
 
-class WebDriverSession implements ControllerSession {
+export class WebDriverSession implements ControllerSession {
   readonly supportsTracing = false;
   private collectedLogs = false;
   private responseCount = 0;
@@ -139,6 +139,15 @@ class WebDriverSession implements ControllerSession {
   }
   async discardTrace(): Promise<void> {
     /* no-op */
+  }
+
+  async getIdentity() {
+    // W3C capabilities (browserName/browserVersion; legacy sessions expose
+    // `version`). Field parsing stays inside the WebDriver controller.
+    const capabilities = await (this.driver as unknown as {
+      getCapabilities?: () => Promise<{ get(key: string): unknown } | Record<string, unknown>>;
+    }).getCapabilities?.();
+    return identityFromCapabilities(capabilities);
   }
 
   async disableCache(): Promise<void> {
@@ -389,6 +398,30 @@ async function freePort(): Promise<number> {
 
 export function driverServerArgs(engine: 'firefox' | 'chromium', port: number): string[] {
   return engine === 'chromium' ? [`--port=${port}`] : ['--port', String(port)];
+}
+
+/**
+ * Extract the live identity from W3C/legacy WebDriver session capabilities.
+ * Pure: accepts whatever `driver.getCapabilities()` returned (selenium's
+ * Capabilities object with a `get(key)` method, or a plain record) and reads
+ * `browserName` + `browserVersion` (W3C) with legacy `version` as fallback.
+ */
+export function identityFromCapabilities(
+  capabilities: { get(key: string): unknown } | Record<string, unknown> | null | undefined,
+): { engine: string | null; version: string | null; method: string } {
+  const get = (key: string): unknown => {
+    if (!capabilities) return undefined;
+    if (typeof (capabilities as { get?: (k: string) => unknown }).get === 'function') {
+      return (capabilities as { get: (k: string) => unknown }).get(key);
+    }
+    return (capabilities as Record<string, unknown>)[key];
+  };
+  return {
+    engine: (get('browserName') as string | undefined) ?? null,
+    version:
+      (get('browserVersion') as string | undefined) ?? (get('version') as string | undefined) ?? null,
+    method: 'webdriver:session-capabilities',
+  };
 }
 
 export function firefoxDriverEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

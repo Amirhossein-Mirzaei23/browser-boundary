@@ -94,6 +94,24 @@ export interface CheckArtifacts {
   tracePath: string | null;
 }
 
+/**
+ * Verified identity evidence for one check: what was requested, what the
+ * on-disk executable reports, and what the live session reports. A check is
+ * only trustworthy when these agree (within the correct version domain).
+ */
+export interface BrowserIdentityEvidence {
+  requestedVersion: string;
+  requestedEngine: EngineName;
+  executableVersion: string | null;
+  executableEngine: string | null;
+  runtimeVersion: string | null;
+  runtimeEngine: string | null;
+  executableMethod: string;
+  runtimeMethod: string;
+  verified: boolean;
+  mismatchReason: string | null;
+}
+
 /** The full result of one (engine, version, page) check. */
 export interface CheckResult {
   engine: EngineName;
@@ -104,6 +122,13 @@ export interface CheckResult {
   url: string;
   verdict: Verdict;
   reason: string;
+  identity: BrowserIdentityEvidence;
+  /**
+   * Controller that actually drove this check. Null when no controller was
+   * launched (e.g. a synthesized inconclusive result for an unavailable
+   * historical binary) — never fabricated.
+   */
+  controller: 'playwright' | 'webdriver' | null;
   signals: CheckSignals;
   artifacts: CheckArtifacts;
   /** Feature attribution, if any (may be present even on inconclusive results). */
@@ -141,6 +166,8 @@ export interface ScanConfigSnapshot {
   timeoutMs: number;
   headed: boolean;
   latestOnly: boolean;
+  /** True when this scan is a quick current-browser proof, not boundary discovery. */
+  quick: boolean;
   strategy: string;
   stepSize: number;
   versionFloor: Partial<Record<EngineName, number>>;

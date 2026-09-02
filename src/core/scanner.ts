@@ -17,6 +17,7 @@ import {
 } from '../config/resolve.js';
 import { defaultBrowserProvider, type BrowserProvider } from '../browsers/provider.js';
 import { HistoricalUnavailableError } from '../browsers/types.js';
+import { buildIdentityEvidence } from '../browsers/identity.js';
 import type { FetchProgressHandler } from '../browsers/progress.js';
 import { checkEngineDeps } from './dependencies.js';
 import { runCheckWithRetry } from './compatibility-checker.js';
@@ -92,6 +93,7 @@ export class BrowserCompatibilityScanner {
         timeoutMs: cfg.timeout,
         headed: cfg.headed,
         latestOnly: cfg.strategy === 'latest',
+        quick: cfg.quick,
         strategy: cfg.strategy,
         stepSize: cfg.stepSize,
         versionFloor: cfg.floor,
@@ -326,6 +328,18 @@ function synthesizeInconclusive(
     url: page.url,
     verdict: 'inconclusive',
     reason,
+    // No browser launched, so no identity could be observed — that is exactly
+    // why this result stays inconclusive.
+    identity: buildIdentityEvidence({
+      requestedVersion: version,
+      requestedEngine: engine,
+      versionType,
+      executable: null,
+      runtime: null,
+    }),
+    // No controller drove this check: no session was ever created. Recording
+    // one would fabricate evidence.
+    controller: null,
     signals: {
       navigationError: null,
       jsErrors: [],

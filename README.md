@@ -11,7 +11,7 @@
 
 Real browser binaries. Verified compatibility boundaries. No User-Agent spoofing.
 
-[Quick start](#quick-start) · [How it works](#how-the-search-works) · [CLI reference](#cli-reference) · [Library API](#library-api) · [FAQ](#troubleshooting-and-faq)
+[Quick start](#quick-start) · [Fast start](#fast-start-a-staged-workflow) · [CLI reference](#cli-reference) · [Library API](#library-api) · [FAQ](#troubleshooting-and-faq)
 
 </div>
 
@@ -28,24 +28,32 @@ Versions the scanner could not test remain inconclusive. They are never silently
 
 **Why this matters:** a support policy may claim "works on Chrome 90+," while a real scan can verify that Chrome 96 passes and Chrome 95 fails on the routes that matter to your application.
 
-## Why browser-boundary?
+## Contents
 
-| Aspect | browser-boundary |
-| --- | --- |
-| Browser identity | Launches the real binary; never changes only the User-Agent |
-| Historical testing | Tests Chromium 67 to current and Firefox 52 to current |
-| Search speed | Steps through releases, then binary-searches the pass/fail gap |
-| Failure signals | Navigation, JavaScript, console, network, rendering, and app readiness |
-| Evidence | JSON and Markdown reports, screenshots, traces, and logs |
-| Automation | CLI exit codes plus a typed TypeScript API |
-
-## Comparison to alternatives
-
-BrowserStack and Sauce Labs provide broad cloud coverage across real devices, operating systems, and Safari releases. Use them when device coverage, hosted infrastructure, or cross-platform manual testing matters. `browser-boundary` is a focused, local or CI-friendly tool for finding a verified pass/fail boundary across browser versions you can launch from your own runner.
-
-Browserslist and Can I Use answer a different question. They use declared targets and static feature-support data; they do not load your deployed application, exercise its routes, or observe its runtime failures. `browser-boundary` complements them by turning an expected support range into evidence from real execution.
+- [Browser coverage](#browser-coverage)
+- [Quick start](#quick-start)
+- [Fast start: a staged workflow](#fast-start-a-staged-workflow)
+- [Real historical demo](#real-historical-demo)
+- [Why browser-boundary?](#why-browser-boundary)
+- [Comparison to alternatives](#comparison-to-alternatives)
+- [Common recipes](#common-recipes)
+- [How the search works](#how-the-search-works)
+- [What counts as a pass?](#what-counts-as-a-pass)
+- [Reports and artifacts](#reports-and-artifacts)
+- [CLI reference](#cli-reference)
+- [Library API](#library-api)
+- [CI example](#ci-example)
+- [Troubleshooting and FAQ](#troubleshooting-and-faq)
+- [Limitations](#limitations)
+- [Development](#development)
+- [Contributing](#contributing)
+- [Changelog](#changelog)
+- [License](#license)
 
 ## Browser coverage
+
+> [!NOTE]
+> See the full [capability matrix](docs/CAPABILITY_MATRIX.md) for controller, version-domain, platform, and optional-dependency constraints — including which combinations are validated, best-effort, or unsupported — **before** paying any historical download cost.
 
 | Engine | Coverage | Automation |
 | --- | --- | --- |
@@ -60,7 +68,7 @@ Browserslist and Can I Use answer a different question. They use declared target
 
 ### 1. Install
 
-You need Node.js 18 or newer and Playwright 1.40 or newer.
+You need Node.js 18 or newer and Playwright 1.40 or newer (Playwright is a required peer dependency; it drives current-browser checks). Scans are validated on Linux x64; macOS and Windows hosts are best-effort — see the [capability matrix](docs/CAPABILITY_MATRIX.md).
 
 For local and manual use, install the CLI globally and download the current browser builds:
 
@@ -73,7 +81,7 @@ If you do not want a global install, use `npx` instead:
 
 ```bash
 npx browser-boundary install
-npx browser-boundary https://www.whatsmybrowser.org/
+npx browser-boundary https://your-site.example.com/
 ```
 
 For CI/CD or projects that need pinned dependency versions, install locally as development dependencies:
@@ -96,17 +104,20 @@ npm install --save-dev @puppeteer/browsers selenium-webdriver
 
 ### 2. Scan a site
 
+> [!NOTE]
+> Scan only websites you own or are authorized to test. The examples below use `https://your-site.example.com/` as a placeholder — replace it with your own staging or production URL.
+
 ```bash
-browser-boundary https://www.whatsmybrowser.org/
+browser-boundary https://your-site.example.com/
 ```
 
-With the alternative non-global workflow, prefix the command with `npx`: `npx browser-boundary https://www.whatsmybrowser.org/`.
+With the alternative non-global workflow, prefix the command with `npx`: `npx browser-boundary https://your-site.example.com/`.
 
 For a quick historical Chromium check that visibly reports the detected browser,
 run the oldest supported Chromium major:
 
 ```bash
-browser-boundary https://www.whatsmybrowser.org/ \
+browser-boundary https://your-site.example.com/ \
   --engines chromium \
   --versions 67
 ```
@@ -114,10 +125,16 @@ browser-boundary https://www.whatsmybrowser.org/ \
 Browser windows are visible by default, making it easy to watch each test. Hide them in CI or automated runs:
 
 ```bash
-browser-boundary https://www.whatsmybrowser.org/ --headless
+browser-boundary https://your-site.example.com/ --headless
 ```
 
 The default scan checks Chromium, Firefox, and WebKit and writes its results to `./reports`.
+
+Want visible proof that the tool launches real builds? Scan a page that displays its own browser version, such as `https://www.whatsmybrowser.org/` — as with any target, only scan pages you are authorized to test:
+
+```bash
+browser-boundary https://www.whatsmybrowser.org/ --engines chromium
+```
 
 ### 3. Read the result
 
@@ -149,40 +166,102 @@ The generated `compatibility.md` records the same boundary with the evidence att
 - verified PASS >= 109; verified FAIL at 108
 ```
 
-These values are illustrative, not claims about `www.whatsmybrowser.org`. Your results depend on the target pages, enabled checks, available binaries, and host environment.
+These values are illustrative, not claims about any particular site. Your results depend on the target pages, enabled checks, available binaries, and host environment. (The observed demo values below are the exception — they come from the reproducible README demo.)
 
-<!-- TODO: add terminal recording/screenshot -->
+## Fast start: a staged workflow
 
-Want visible proof that the tool launches real builds? Scan a page that displays its own browser version:
+You rarely need a full historical scan on day one. Work in stages — every stage is a plain CLI command you can also run on its own.
+
+### Stage 1 — current-browser proof in seconds
 
 ```bash
-browser-boundary https://www.whatsmybrowser.org/ --engines chromium
+browser-boundary quick https://your-site.example.com/
 ```
+
+`quick` is a headless, one-URL, current-Chromium check. Its result is explicitly labeled a **current-browser proof, not boundary discovery**: it tells you the site works in today's browser, nothing about the oldest one. It accepts exactly one URL and cannot be combined with `--pages`, `--versions`, `--strategy`, or engines other than Chromium.
+
+### Stage 2 — verify exact historical majors
+
+```bash
+browser-boundary https://your-site.example.com/ \
+  --engines chromium \
+  --versions 120,115 \
+  --headless
+```
+
+### Stage 3 — full multi-engine boundary scan
+
+```bash
+browser-boundary https://your-site.example.com/
+```
+
+A `quick` run prints the exact Stage 2 and Stage 3 commands for the scanned URL as next actions, so you can copy them straight from the terminal.
+
+### Which command do I need?
+
+| You want | Command |
+| --- | --- |
+| Fastest signal: does the current browser work? | `quick <url>` |
+| Proof for specific majors ("our policy says 120+") | `<url> --engines chromium --versions 120,115` |
+| The oldest passing / first failing version (the boundary) | `<url>` (default `binary` strategy) |
+| All engines, current builds only | `<url> --strategy latest --headless` |
+
+## Real historical demo
+
+This is an **observed** result, reproduced end-to-end from this repository using adjacent Chromium majors (see [`examples/readme-demo`](examples/readme-demo/README.md) and the [capture notes](docs/readme-demo/CAPTURE.md)):
+
+![Real Chrome-for-Testing 120 (left, FAIL) and 121 (right, PASS) loading the deterministic demo page](docs/assets/readme-demo/browser-boundary-demo.png)
+
+- Chromium **121** — verified **PASS**
+- Chromium **120** — verified **FAIL** with `Array.fromAsync is not a function` — a real compatibility failure, not an infrastructure error
+
+Before a result is attributed to a requested version, the launched binary's identity is verified: the requested, on-disk, and running majors must match.
+
+A short recording and the exact verifier transcript are committed alongside: [animation](docs/assets/readme-demo/browser-boundary-demo.gif) · [transcript](docs/assets/readme-demo/transcript.txt). Reproduce it yourself:
+
+```bash
+npm run verify:readme-demo
+```
+
+## Why browser-boundary?
+
+- Launches the real browser binary; never changes only the User-Agent
+- Tests Chromium 67 to current and Firefox 52 to current, plus the current WebKit build
+- Steps through releases, then binary-searches the pass/fail gap
+- Detects failures across navigation, JavaScript, console, network, rendering, and app readiness
+- Produces evidence: JSON and Markdown reports, screenshots, traces, and logs
+- Automates cleanly: CLI exit codes plus a typed TypeScript API
+
+## Comparison to alternatives
+
+BrowserStack and Sauce Labs provide broad cloud coverage across real devices, operating systems, and Safari releases. Use them when device coverage, hosted infrastructure, or cross-platform manual testing matters. `browser-boundary` is a focused, local or CI-friendly tool for finding a verified pass/fail boundary across browser versions you can launch from your own runner.
+
+Browserslist and Can I Use answer a different question. They use declared targets and static feature-support data; they do not load your deployed application, exercise its routes, or observe its runtime failures. `browser-boundary` complements them by turning an expected support range into evidence from real execution.
 
 ## Common recipes
 
 ### Pick browser engines
 
 ```bash
-browser-boundary https://www.whatsmybrowser.org/ --engines chromium,firefox
+browser-boundary https://your-site.example.com/ --engines chromium,firefox
 ```
 
 ### Run a fast current-browser check
 
 ```bash
-browser-boundary https://www.whatsmybrowser.org/ --strategy latest --headless
+browser-boundary https://your-site.example.com/ --strategy latest --headless
 ```
 
 `--latest-only` is a shortcut for the same search mode:
 
 ```bash
-browser-boundary https://www.whatsmybrowser.org/ --latest-only --headless
+browser-boundary https://your-site.example.com/ --latest-only --headless
 ```
 
 ### Test exact browser majors
 
 ```bash
-browser-boundary https://www.whatsmybrowser.org/ \
+browser-boundary https://your-site.example.com/ \
   --engines chromium \
   --versions 120,115,110
 ```
@@ -190,7 +269,7 @@ browser-boundary https://www.whatsmybrowser.org/ \
 Historical Chromium snapshots use a matching snapshot ChromeDriver by default:
 
 ```bash
-browser-boundary https://www.whatsmybrowser.org/ --engines chromium --versions 83 \
+browser-boundary https://your-site.example.com/ --engines chromium --versions 83 \
   --chromium-controller auto
 ```
 
@@ -203,7 +282,7 @@ verified before a result is attributed to the requested version.
 Use `--exact-version` when you need only one:
 
 ```bash
-browser-boundary https://www.whatsmybrowser.org/ \
+browser-boundary https://your-site.example.com/ \
   --engines firefox \
   --exact-version 115
 ```
@@ -221,9 +300,9 @@ WebKit does not support exact historical versions.
 ### Scan several routes
 
 ```bash
-browser-boundary https://www.whatsmybrowser.org/ \
+browser-boundary https://your-app.example.com/ \
   --pages /,/login,/dashboard \
-  --base-url https://www.whatsmybrowser.org/
+  --base-url https://your-app.example.com/
 ```
 
 The positional URL is included in the scan. `--pages` accepts relative paths and full URLs.
@@ -233,7 +312,7 @@ The positional URL is included in the scan. `--pages` accepts relative paths and
 A page loading is not always the same as an app being ready. Require one or more CSS selectors before the scan passes:
 
 ```bash
-browser-boundary https://www.whatsmybrowser.org/ \
+browser-boundary https://your-app.example.com/ \
   --readiness-selector '#app' \
   --readiness-selector '[data-hydrated]' \
   --readiness-mode all
@@ -244,7 +323,7 @@ browser-boundary https://www.whatsmybrowser.org/ \
 ### Choose report formats and location
 
 ```bash
-browser-boundary https://www.whatsmybrowser.org/ \
+browser-boundary https://your-site.example.com/ \
   --format json,markdown \
   --output ./browser-reports
 ```
@@ -319,7 +398,11 @@ Reports may contain tested URLs, failed request URLs, console messages, and erro
 ## CLI reference
 
 ```text
-browser-boundary <url> [options]
+browser-boundary <url> [options]   Run a scan (the default command)
+browser-boundary quick <url>       Stage 1 fast check: headless, current Chromium, one URL
+browser-boundary install           Download the current Playwright browser builds
+browser-boundary --help            Show CLI help
+browser-boundary --version         Print the installed version
 ```
 
 | Option | Description |
@@ -341,6 +424,7 @@ browser-boundary <url> [options]
 | `--readiness-selector <css>` | Required CSS selector. May be repeated. |
 | `--readiness-mode <mode>` | `any` or `all`. Default: `any`. |
 | `--min-confidence <level>` | Minimum confidence that can cause failure. Default: `low`. |
+| `--config <file>` | Load scan settings from a JSON file (URLs, engines, search, browser mode, output). CLI flags are merged on top. |
 | `--format <list>` | `json`, `markdown`, or both. Default: both. |
 | `-o, --output <dir>` | Report directory. Default: `./reports`. |
 | `-v, --version` | Print the installed version. |
@@ -351,14 +435,18 @@ browser-boundary --help
 browser-boundary --version
 ```
 
+Most options can also be set with `MRZ_*` environment variables (legacy `BC_*` names are still accepted); see `browser-boundary --help` for the full list.
+
 ### Exit codes
 
 | Code | Meaning |
 | ---: | --- |
-| `0` | Scan completed without a verified compatibility failure. |
+| `0` | Scan completed without a verified compatibility failure. Some engines may still be inconclusive. |
 | `1` | At least one verified compatibility failure was found. |
 | `2` | Configuration is invalid. |
-| `3` | Browser or host infrastructure failed. |
+| `3` | Browser or host infrastructure failed — including a scan in which every engine ended with errors or inconclusive results and no version was verified at all. |
+
+Exit code `0` is not a claim that every engine passed: a scan that mixes verified passes with inconclusive engines still exits `0`. For strict gating, read `compatibility.json` and treat unexpected `inconclusive` entries as their own failure.
 
 ## Library API
 
@@ -370,7 +458,7 @@ import { scan, writeJson, writeMarkdown } from 'browser-boundary';
 const result = await scan(
   {
     urls: [
-      'https://www.whatsmybrowser.org/',
+      'https://your-site.example.com/',
       {
         url: 'https://your-app.test/dashboard',
         label: 'dashboard',
@@ -434,7 +522,7 @@ const result = await scan({
 import { scan } from 'browser-boundary';
 
 const result = await scan({
-  urls: ['https://www.whatsmybrowser.org/'],
+  urls: ['https://your-site.example.com/'],
   engines: ['chromium'],
   search: {
     strategy: 'explicit',
@@ -471,7 +559,20 @@ const result = await scan({
 | `output.directory` | `string` | Artifact directory. |
 | `cache.directory` | `string` | Historical binary cache directory. |
 
-The package also exports result types, browser-provider interfaces, report renderers, compatibility analysis helpers, and low-level search/check functions. See the generated TypeScript declarations for the complete API.
+### Main exports
+
+| Export | Purpose |
+| --- | --- |
+| `scan()` | Run a scan and return a `ScanResult`. |
+| `BrowserCompatibilityScanner` | Scanner class behind `scan()`. |
+| `resolveConfig()`, `DEFAULTS`, `ConfigError` | Validate configuration and apply defaults. |
+| `writeJson()`, `writeMarkdown()`, `renderMarkdown()` | Render summary reports. |
+| `searchBoundary()`, `versionRange()` | Low-level boundary search. |
+| `runCheck()`, `runCheckWithRetry()` | Run a single compatibility check. |
+| `FEATURE_TABLE`, `meetsThreshold()`, `formatVersion()` | Feature-attribution analysis helpers. |
+| `defaultBrowserProvider`, `DefaultBrowserProvider` | Browser acquisition and caching layer. |
+
+The package also exports result types, browser-provider and controller interfaces, and other low-level helpers. See the generated TypeScript declarations (`dist/index.d.ts`) for the complete API.
 
 ## CI example
 
@@ -527,21 +628,7 @@ Try these in order:
 
 Chromium already receives `--no-sandbox` and `--disable-dev-shm-usage`. Firefox historical builds use geckodriver and may have different library requirements. There is no single modern Linux image that can reliably launch every historical release.
 
-Chromium snapshot scans download both `chrome-linux.zip` and the matching
-`chromedriver_linux64.zip` on the first successful run. Later runs reuse a
-validated manifest without contacting the bucket. Old manifests whose binary
-reports a different major are ignored rather than producing a mislabeled result.
-
-For Chromium 62–74, snapshot revisions may not publish a usable same-revision
-driver. In that range browser-boundary falls back to an audited legacy
-ChromeDriver compatibility matrix and uses the legacy JSON Wire session format
-required by pre-75 drivers. A minimal legacy Fontconfig file is also supplied so
-old Chromium can use installed fonts without parsing newer Fontconfig syntax.
-The official archive is tried first; the npm mirror
-is used when Google storage is geo-blocked. Some very old Chromium binaries may
-still require obsolete host libraries such as `libgconf-2.so.4`; those versions
-remain inconclusive on modern hosts unless run in a compatible older container
-or VM.
+Chromium snapshot scans download both `chrome-linux.zip` and the matching `chromedriver_linux64.zip` on the first successful run; later runs reuse a validated manifest without contacting the bucket, and cached manifests whose binary reports a different major are ignored rather than producing a mislabeled result. For Chromium 62–74, snapshot revisions may not publish a usable same-revision driver; in that range browser-boundary falls back to an audited legacy ChromeDriver compatibility matrix, drives the browser with the legacy JSON Wire session format required by pre-75 drivers, and supplies a minimal legacy Fontconfig file so old Chromium can use installed fonts. The official archive is tried first; the npm mirror is used when Google storage is geo-blocked. Some very old Chromium binaries still require obsolete host libraries such as `libgconf-2.so.4`; those versions remain inconclusive on modern hosts unless run in a compatible older container or VM.
 
 ### What should I do when many versions are inconclusive?
 
@@ -620,6 +707,10 @@ npm run pack-check
 ```
 
 Run `npm run test:fixtures` when changing browser controllers, detection, readiness, or report behavior. In the PR description, explain the problem, the chosen approach, and how you verified it. Do not commit generated reports, downloaded browser binaries, caches, or credentials.
+
+## Changelog
+
+Notable changes for each release are documented in [CHANGELOG.md](CHANGELOG.md), following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## License
 
