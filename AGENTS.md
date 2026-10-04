@@ -20,6 +20,12 @@
 - Run tests, type-checking, and the build before declaring work complete.
 - Do not commit generated `dist/`, `reports/`, browser caches, or log files.
 
+## Cursor Cloud specific instructions
+
+- Node.js 22 matches CI. Install locked dependencies with `npm ci`.
+- Fixture tests and real scans need Playwright Chromium plus its system libraries: `npx playwright install --with-deps chromium`.
+- The local demo target is `npm run demo:readme` at http://127.0.0.1:4317/. After `npm run build`, a current-browser proof is `node bin/browser-boundary.js quick http://127.0.0.1:4317/`. `npm run scan -- quick http://127.0.0.1:4317/` runs the same check from source.
+
 ## Local Agent Resources
 
 - Reusable project skills live in `.agents/skills/<skill-name>/SKILL.md`.
